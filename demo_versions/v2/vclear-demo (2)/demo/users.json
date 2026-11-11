@@ -1,0 +1,39 @@
+{
+  "users": [
+    {
+      "username": "admin",
+      "password": "admin",
+      "name": "Admin",
+      "role": "admin",
+      "created": "2026-11-05T11:34:35.020Z"
+    },
+    {
+      "username": "sathya",
+      "password": "123456789",
+      "name": "sathya",
+      "role": "marketing",
+      "created": "2026-11-05T11:35:17.184Z"
+    },
+    {
+      "username": "planner_1",
+      "password": "planner_1",
+      "name": "planner_1",
+      "role": "cad",
+      "created": "2026-11-05T11:36:52.168Z"
+    },
+    {
+      "username": "Man_1",
+      "password": "Man_1",
+      "name": "Man_1",
+      "role": "lab",
+      "created": "2026-11-05T11:37:10.852Z"
+    },
+    {
+      "username": "QC_1",
+      "password": "QC_1",
+      "name": "QC_1",
+      "role": "qc",
+      "created": "2026-11-05T11:37:34.082Z"
+    }
+  ]
+}

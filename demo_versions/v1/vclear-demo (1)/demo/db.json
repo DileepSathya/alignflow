@@ -1,0 +1,261 @@
+{
+  "counters": {
+    "order": 2,
+    "clinic": 2
+  },
+  "clinics": [
+    {
+      "id": "CLC-002",
+      "city": "HYD",
+      "dentist": "Raja",
+      "email": "",
+      "name": "ameya clinic",
+      "phone": "8522092242"
+    },
+    {
+      "id": "CLC-001",
+      "city": "Tirupati",
+      "dentist": "Sathya",
+      "email": "dileepsathya2205@gmail.com",
+      "name": "ABC clinic",
+      "phone": "8522092242"
+    }
+  ],
+  "orders": [
+    {
+      "id": "ORD-002",
+      "plan": 3,
+      "lab": 2,
+      "qcOk": 1,
+      "issue": false,
+      "cycles": 1,
+      "age": 32,
+      "clinicId": "CLC-002",
+      "comments": [
+        {
+          "at": "2026-11-05T09:24:42.356Z",
+          "by": "Ravi Kumar",
+          "team": "Marketing team",
+          "text": "order submitted"
+        },
+        {
+          "at": "2026-11-05T09:25:40.614Z",
+          "by": "Sunita Rao",
+          "team": "Clinical CAD team",
+          "text": "repords doe"
+        },
+        {
+          "at": "2026-11-05T09:30:14.078Z",
+          "by": "Priya Sharma",
+          "team": "QC team",
+          "text": "QC passed. Approved."
+        }
+      ],
+      "created": "2026-11-05T09:06:00.697Z",
+      "dentist": "Raja",
+      "docs": [
+        {
+          "at": "2026-11-05T09:24:11.840Z",
+          "by": "Ravi Kumar",
+          "name": "Screenshot 2026-08-10 221921.png",
+          "size": 42199,
+          "team": "Marketing team",
+          "url": "/uploads/1793870651842-Screenshot%202026-08-10%20221921.png"
+        },
+        {
+          "at": "2026-11-05T09:24:11.856Z",
+          "by": "Ravi Kumar",
+          "name": "Screenshot 2026-08-12 071546.png",
+          "size": 43428,
+          "team": "Marketing team",
+          "url": "/uploads/1793870651858-Screenshot%202026-08-12%20071546.png"
+        },
+        {
+          "at": "2026-11-05T09:25:30.787Z",
+          "by": "Sunita Rao",
+          "name": "Screenshot (4).png",
+          "size": 199721,
+          "team": "Clinical CAD team",
+          "url": "/uploads/1793870730788-Screenshot%20_4_.png"
+        }
+      ],
+      "email": "dileepsathya2205@gmail.com",
+      "notes": "alighers",
+      "patient": "Sathya",
+      "phone": "8522092242",
+      "issues": [
+        {
+          "files": [],
+          "id": "ORD-002-I1",
+          "raisedAt": "2026-11-05T09:26:39.363Z",
+          "raisedBy": {
+            "name": "Ravi Kumar",
+            "team": "Marketing team"
+          },
+          "raisedTo": {
+            "name": "Sunita Rao",
+            "team": "Clinical CAD team"
+          },
+          "resolvedAt": "2026-11-05T09:27:11.010Z",
+          "resolvedBy": {
+            "name": "Sunita Rao",
+            "team": "Clinical CAD team"
+          },
+          "stage": "clinic",
+          "text": "incrase sixze"
+        },
+        {
+          "files": [
+            {
+              "at": "2026-11-05T09:28:45.409Z",
+              "by": "Priya Sharma",
+              "name": "Screenshot 2026-08-05 115246.png",
+              "size": 29384,
+              "team": "QC team",
+              "url": "/uploads/1793870925411-Screenshot%202026-08-05%20115246.png"
+            }
+          ],
+          "id": "ORD-002-I2",
+          "raisedAt": "2026-11-05T09:28:45.408Z",
+          "raisedBy": {
+            "name": "Priya Sharma",
+            "team": "QC team"
+          },
+          "raisedTo": {
+            "name": "Manoj Verma",
+            "team": "Lab team"
+          },
+          "resolvedAt": "2026-11-05T09:29:52.773Z",
+          "resolvedBy": {
+            "name": "Manoj Verma",
+            "team": "Lab team"
+          },
+          "stage": "qc",
+          "text": "increae sie"
+        }
+      ],
+      "cadBy": "Sunita Rao",
+      "labBy": "Manoj Verma"
+    },
+    {
+      "id": "ORD-001",
+      "plan": 3,
+      "lab": 2,
+      "qcOk": 1,
+      "issue": false,
+      "cycles": 1,
+      "age": 32,
+      "clinicId": "CLC-001",
+      "comments": [
+        {
+          "at": "2026-11-05T09:08:18.744Z",
+          "by": "Priya Sharma",
+          "team": "QC team",
+          "text": "QC passed. Approved."
+        }
+      ],
+      "created": "2026-11-05T09:06:00.697Z",
+      "dentist": "Sathya",
+      "docs": [
+        {
+          "at": "2026-11-05T09:06:46.922Z",
+          "by": "Ravi Kumar",
+          "name": "Screenshot (3).png",
+          "size": 186490,
+          "team": "Marketing team",
+          "url": "/uploads/1793869606924-Screenshot%20_3_.png"
+        },
+        {
+          "at": "2026-11-05T09:06:46.932Z",
+          "by": "Ravi Kumar",
+          "name": "Screenshot (4).png",
+          "size": 199721,
+          "team": "Marketing team",
+          "url": "/uploads/1793869606933-Screenshot%20_4_.png"
+        },
+        {
+          "at": "2026-11-05T09:06:46.938Z",
+          "by": "Ravi Kumar",
+          "name": "Screenshot 2026-08-04 211911.png",
+          "size": 224349,
+          "team": "Marketing team",
+          "url": "/uploads/1793869606939-Screenshot%202026-08-04%20211911.png"
+        },
+        {
+          "at": "2026-11-05T09:07:18.449Z",
+          "by": "Sunita Rao",
+          "name": "Screenshot 2026-08-05 125409.png",
+          "size": 4669,
+          "team": "Clinical CAD team",
+          "url": "/uploads/1793869638451-Screenshot%202026-08-05%20125409.png"
+        }
+      ],
+      "email": "dileepsathya2205@gmail.com",
+      "notes": "Aligner",
+      "patient": "Srikanth",
+      "phone": "8522092242",
+      "issues": [
+        {
+          "files": [
+            {
+              "at": "2026-11-05T09:07:33.831Z",
+              "by": "Ravi Kumar",
+              "name": "Screenshot 2026-08-05 153515.png",
+              "size": 227915,
+              "team": "Marketing team",
+              "url": "/uploads/1793869653833-Screenshot%202026-08-05%20153515.png"
+            }
+          ],
+          "id": "ORD-001-I1",
+          "raisedAt": "2026-11-05T09:07:33.830Z",
+          "raisedBy": {
+            "name": "Ravi Kumar",
+            "team": "Marketing team"
+          },
+          "raisedTo": {
+            "name": "Sunita Rao",
+            "team": "Clinical CAD team"
+          },
+          "resolvedAt": "2026-11-05T09:07:37.305Z",
+          "resolvedBy": {
+            "name": "Sunita Rao",
+            "team": "Clinical CAD team"
+          },
+          "stage": "clinic",
+          "text": "fwq"
+        },
+        {
+          "files": [
+            {
+              "at": "2026-11-05T09:08:01.516Z",
+              "by": "Priya Sharma",
+              "name": "Screenshot 2026-08-05 153515.png",
+              "size": 227915,
+              "team": "QC team",
+              "url": "/uploads/1793869681518-Screenshot%202026-08-05%20153515.png"
+            }
+          ],
+          "id": "ORD-001-I2",
+          "raisedAt": "2026-11-05T09:08:01.515Z",
+          "raisedBy": {
+            "name": "Priya Sharma",
+            "team": "QC team"
+          },
+          "raisedTo": {
+            "name": "Manoj Verma",
+            "team": "Lab team"
+          },
+          "resolvedAt": "2026-11-05T09:08:12.284Z",
+          "resolvedBy": {
+            "name": "Manoj Verma",
+            "team": "Lab team"
+          },
+          "stage": "qc",
+          "text": "2d"
+        }
+      ],
+      "cadBy": "Sunita Rao",
+      "labBy": "Manoj Verma"
+    }
+  ]
+}

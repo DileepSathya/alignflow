@@ -1,0 +1,306 @@
+{
+  "counters": {
+    "order": 4,
+    "clinic": 2
+  },
+  "clinics": [
+    {
+      "id": "CLC-002",
+      "addedBy": "marketing_2",
+      "addedByUser": "marketing_2",
+      "city": "HYD",
+      "created": "2026-11-06T09:00:26.042Z",
+      "dentist": "raja",
+      "email": "sathya@ameyalabs.com",
+      "name": "ameya clinic",
+      "phone": "8522092242"
+    },
+    {
+      "id": "CLC-001",
+      "addedBy": "marketing_1",
+      "addedByUser": "marketing_1",
+      "city": "Tirupati",
+      "created": "2026-11-06T06:19:33.001Z",
+      "dentist": "Sathya",
+      "email": "sathya@ameyalabs.com",
+      "name": "ABC_clinic",
+      "phone": "8522092242"
+    }
+  ],
+  "orders": [
+    {
+      "id": "ORD-004",
+      "plan": 3,
+      "lab": 2,
+      "qcOk": 1,
+      "issue": false,
+      "cycles": 0,
+      "age": 20,
+      "clinicId": "CLC-002",
+      "comments": [
+        {
+          "at": "2026-11-06T09:06:11.187Z",
+          "by": "qc_1",
+          "team": "QC team",
+          "text": "QC passed. Approved."
+        }
+      ],
+      "created": "2026-11-06T08:59:59.485Z",
+      "dentist": "raja",
+      "docs": [],
+      "email": "sathya@ameyalabs.com",
+      "notes": "asc",
+      "patient": "hari",
+      "phone": "8522092242",
+      "submittedBy": "marketing_2",
+      "submittedByUser": "marketing_2",
+      "cadBy": "planner_1",
+      "issues": [
+        {
+          "files": [],
+          "id": "ORD-004-I1",
+          "raisedAt": "2026-11-06T09:03:24.678Z",
+          "raisedBy": {
+            "name": "marketing_2",
+            "team": "Marketing team"
+          },
+          "raisedTo": {
+            "name": "Clinical CAD team",
+            "team": "Clinical CAD team"
+          },
+          "resolvedAt": "2026-11-06T09:03:41.103Z",
+          "resolvedBy": {
+            "name": "planner_1",
+            "team": "Clinical CAD team"
+          },
+          "stage": "clinic",
+          "text": "xyz"
+        },
+        {
+          "files": [],
+          "id": "ORD-004-I2",
+          "raisedAt": "2026-11-06T09:03:53.256Z",
+          "raisedBy": {
+            "name": "marketing_2",
+            "team": "Marketing team"
+          },
+          "raisedTo": {
+            "name": "Clinical CAD team",
+            "team": "Clinical CAD team"
+          },
+          "resolvedAt": "2026-11-06T09:04:11.338Z",
+          "resolvedBy": {
+            "name": "planner_1",
+            "team": "Clinical CAD team"
+          },
+          "stage": "clinic",
+          "text": "asdf"
+        }
+      ],
+      "labBy": "man_1",
+      "qcBy": "qc_1"
+    },
+    {
+      "id": "ORD-003",
+      "plan": 0,
+      "lab": 0,
+      "qcOk": 0,
+      "issue": false,
+      "cycles": 0,
+      "age": 20,
+      "clinicId": "CLC-002",
+      "comments": [],
+      "created": "2026-11-06T08:59:59.485Z",
+      "dentist": "raja",
+      "docs": [],
+      "email": "sathya@ameyalabs.com",
+      "notes": "xyx",
+      "patient": "sathya",
+      "phone": "8522092242",
+      "submittedBy": "marketing_2",
+      "submittedByUser": "marketing_2",
+      "cancelled": {
+        "at": "2026-11-06T09:01:47.348Z",
+        "by": "marketing_2",
+        "byUser": "marketing_2",
+        "reason": ""
+      }
+    },
+    {
+      "id": "ORD-002",
+      "plan": 3,
+      "lab": 2,
+      "qcOk": 1,
+      "issue": false,
+      "cycles": 2,
+      "age": 20,
+      "clinicId": "CLC-001",
+      "comments": [
+        {
+          "at": "2026-11-06T06:23:18.504Z",
+          "by": "qc_1",
+          "team": "QC team",
+          "text": "QC passed. Approved."
+        }
+      ],
+      "created": "2026-11-06T06:18:24.310Z",
+      "dentist": "Sathya",
+      "docs": [
+        {
+          "at": "2026-11-06T06:20:45.384Z",
+          "by": "marketing_1",
+          "name": "planner.html",
+          "size": 47791,
+          "team": "Marketing team",
+          "url": "/uploads/1793946045388-planner.html"
+        }
+      ],
+      "email": "sathya@ameyalabs.com",
+      "notes": "43r",
+      "patient": "srikanth",
+      "phone": "8522092242",
+      "submittedBy": "marketing_1",
+      "submittedByUser": "marketing_1",
+      "cadBy": "planner_1",
+      "issues": [
+        {
+          "files": [],
+          "id": "ORD-002-I1",
+          "raisedAt": "2026-11-06T06:21:18.723Z",
+          "raisedBy": {
+            "name": "marketing_1",
+            "team": "Marketing team"
+          },
+          "raisedTo": {
+            "name": "Clinical CAD team",
+            "team": "Clinical CAD team"
+          },
+          "resolvedAt": "2026-11-06T06:21:30.669Z",
+          "resolvedBy": {
+            "name": "planner_1",
+            "team": "Clinical CAD team"
+          },
+          "stage": "clinic",
+          "text": "rg"
+        },
+        {
+          "files": [],
+          "id": "ORD-002-I2",
+          "raisedAt": "2026-11-06T06:21:36.089Z",
+          "raisedBy": {
+            "name": "marketing_1",
+            "team": "Marketing team"
+          },
+          "raisedTo": {
+            "name": "Clinical CAD team",
+            "team": "Clinical CAD team"
+          },
+          "resolvedAt": "2026-11-06T06:21:40.478Z",
+          "resolvedBy": {
+            "name": "planner_1",
+            "team": "Clinical CAD team"
+          },
+          "stage": "clinic",
+          "text": "4g"
+        },
+        {
+          "files": [],
+          "id": "ORD-002-I3",
+          "raisedAt": "2026-11-06T06:21:55.875Z",
+          "raisedBy": {
+            "name": "marketing_1",
+            "team": "Marketing team"
+          },
+          "raisedTo": {
+            "name": "Clinical CAD team",
+            "team": "Clinical CAD team"
+          },
+          "resolvedAt": "2026-11-06T06:22:00.011Z",
+          "resolvedBy": {
+            "name": "planner_1",
+            "team": "Clinical CAD team"
+          },
+          "stage": "clinic",
+          "text": "5g"
+        },
+        {
+          "files": [],
+          "id": "ORD-002-I4",
+          "raisedAt": "2026-11-06T06:22:32.746Z",
+          "raisedBy": {
+            "name": "qc_1",
+            "team": "QC team"
+          },
+          "raisedTo": {
+            "name": "man_1",
+            "team": "Lab team"
+          },
+          "resolvedAt": "2026-11-06T06:22:45.197Z",
+          "resolvedBy": {
+            "name": "man_1",
+            "team": "Lab team"
+          },
+          "stage": "qc",
+          "text": "e"
+        },
+        {
+          "files": [],
+          "id": "ORD-002-I5",
+          "raisedAt": "2026-11-06T06:22:50.037Z",
+          "raisedBy": {
+            "name": "qc_1",
+            "team": "QC team"
+          },
+          "raisedTo": {
+            "name": "man_1",
+            "team": "Lab team"
+          },
+          "resolvedAt": "2026-11-06T06:22:54.747Z",
+          "resolvedBy": {
+            "name": "man_1",
+            "team": "Lab team"
+          },
+          "stage": "qc",
+          "text": "r3f"
+        }
+      ],
+      "labBy": "man_1",
+      "qcBy": "qc_1"
+    },
+    {
+      "id": "ORD-001",
+      "plan": 0,
+      "lab": 0,
+      "qcOk": 0,
+      "issue": false,
+      "cycles": 0,
+      "age": 20,
+      "clinicId": "CLC-001",
+      "comments": [],
+      "created": "2026-11-06T06:18:24.310Z",
+      "dentist": "Sathya",
+      "docs": [
+        {
+          "at": "2026-11-06T06:20:07.758Z",
+          "by": "marketing_1",
+          "name": "planner.html",
+          "size": 47791,
+          "team": "Marketing team",
+          "url": "/uploads/1793946007763-planner.html"
+        }
+      ],
+      "email": "sathya@ameyalabs.com",
+      "notes": "fw",
+      "patient": "srikanth",
+      "phone": "8522092242",
+      "submittedBy": "marketing_1",
+      "submittedByUser": "marketing_1",
+      "cancelled": {
+        "at": "2026-11-06T06:20:19.152Z",
+        "by": "marketing_1",
+        "byUser": "marketing_1",
+        "reason": ""
+      }
+    }
+  ]
+}

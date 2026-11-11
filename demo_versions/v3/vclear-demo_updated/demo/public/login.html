@@ -1,0 +1,57 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>AlignFlow – Log in</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f3f6f7;--surface:#fff;--ink:#10242b;--ink-2:#4a6068;--line:#d8e2e6;--accent:#0b7a75;--accent-ink:#fff;--accent-soft:#d9efed;--danger:#b3261e;color-scheme:light;
+ --font-display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;--font-body:"Instrument Sans","Segoe UI",system-ui,sans-serif}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 var(--font-body);display:grid;place-items:center;
+ padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.card{width:min(400px,100%);background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:28px 26px;box-shadow:0 12px 40px rgba(16,36,43,.12)}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:22px}
+.mark{width:38px;height:38px;border-radius:11px;background:var(--accent);display:grid;place-items:center;color:var(--accent-ink)}
+.brand b{font-family:var(--font-display);font-size:22px;letter-spacing:-.01em}
+h1{font-family:var(--font-display);font-size:26px;line-height:1.15;margin:0 0 4px;letter-spacing:-.01em}
+p.sub{margin:0 0 20px;color:var(--ink-2)}
+label{display:flex;flex-direction:column;gap:6px;font-weight:600;font-size:13px;margin-bottom:14px}
+input{font:inherit;color:inherit;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:11px 12px}
+input:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-soft)}
+button{font:inherit;width:100%;margin-top:4px;background:var(--accent);color:var(--accent-ink);border:1px solid var(--accent);border-radius:10px;padding:11px 14px;font-weight:600;cursor:pointer}
+button:hover{filter:brightness(1.08)}button:disabled{opacity:.6;cursor:wait}
+.err{color:var(--danger);font-size:13px;font-weight:500;min-height:20px;margin:0 0 8px}
+.hint{margin:18px 0 0;padding-top:14px;border-top:1px solid var(--line);color:var(--ink-2);font-size:12.5px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style></head><body>
+<main class="card">
+  <div class="brand"><span class="mark"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15c0-5 3-9 8-9s8 4 8 9"/><path d="M4 15c2 3 5 3 8 0 3 3 6 3 8 0"/></svg></span><b>AlignFlow</b></div>
+  <h1>Log in</h1>
+  <p class="sub">Sign in with the username and password given by your admin.</p>
+  <form id="f" novalidate>
+    <label for="u">Username<input id="u" autocomplete="username" autocapitalize="none" spellcheck="false" autofocus></label>
+    <label for="p">Password<input id="p" type="password" autocomplete="current-password"></label>
+    <div class="err" id="err" role="alert"></div>
+    <button type="submit" id="go">Log in</button>
+  </form>
+  <p class="hint">Each browser tab keeps its own login, so you can open several teams side by side.</p>
+</main>
+<script src="auth.js" data-public></script>
+<script>
+(function(){
+  // already signed in on this tab? go straight to the workspace
+  if(VAuth.user&&VAuth.user.role&&VAuth.token()){location.replace(VAuth.home());return}
+  var $=function(i){return document.getElementById(i)};
+  $("f").addEventListener("submit",function(e){
+    e.preventDefault();
+    var u=$("u").value.trim(),p=$("p").value;
+    if(!u||!p){$("err").textContent="Enter your username and password.";return}
+    $("go").disabled=true;$("err").textContent="";
+    fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u,password:p})})
+      .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j}})})
+      .then(function(x){if(!x.ok){$("err").textContent=x.j.error||"Login failed.";$("go").disabled=false;$("p").select();return}VAuth.login(x.j)})
+      .catch(function(){$("err").textContent="Can't reach the server. Is it running?";$("go").disabled=false});
+  });
+})();
+</script></body></html>

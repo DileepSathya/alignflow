@@ -1,0 +1,8 @@
+<!doctype html><meta charset="utf-8"><title>AlignFlow</title>
+<script>
+// Entry point: go to your workspace if signed in, otherwise to the login page.
+(function(){var h={admin:"admin.html",marketing:"marketing.html",cad:"planner.html",lab:"lab.html",qc:"qc.html"},u=null;
+try{u=JSON.parse(sessionStorage.getItem("vc_user")||"null")}catch(e){}
+location.replace(u&&h[u.role]&&sessionStorage.getItem("vc_token")?h[u.role]:"login.html")})();
+</script>
+<body style="font-family:system-ui;max-width:420px;margin:60px auto"><a href="login.html">Continue to login</a></body>

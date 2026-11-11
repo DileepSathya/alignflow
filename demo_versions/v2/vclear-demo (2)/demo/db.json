@@ -1,0 +1,78 @@
+{
+  "counters": {
+    "order": 1,
+    "clinic": 1
+  },
+  "clinics": [
+    {
+      "id": "CLC-001",
+      "city": "tirupati",
+      "dentist": "hari",
+      "email": "sathya@ameyalabs.com",
+      "name": "abc clinic",
+      "phone": "8522092242"
+    }
+  ],
+  "orders": [
+    {
+      "id": "ORD-001",
+      "plan": 3,
+      "lab": 2,
+      "qcOk": 1,
+      "issue": false,
+      "cycles": 0,
+      "age": 20,
+      "clinicId": "CLC-001",
+      "comments": [
+        {
+          "at": "2026-11-05T11:38:58.086Z",
+          "by": "QC_1",
+          "team": "QC team",
+          "text": "QC passed. Approved."
+        }
+      ],
+      "created": "2026-11-05T11:35:32.813Z",
+      "dentist": "hari",
+      "docs": [
+        {
+          "at": "2026-11-05T11:36:21.969Z",
+          "by": "sathya",
+          "name": "planner.html",
+          "size": 47791,
+          "team": "Marketing team",
+          "url": "/uploads/1793878581972-planner.html"
+        }
+      ],
+      "email": "sathya@ameyalabs.com",
+      "notes": "qd",
+      "patient": "srikan",
+      "phone": "8522092242",
+      "submittedBy": "sathya",
+      "cadBy": "planner_1",
+      "issues": [
+        {
+          "files": [],
+          "id": "ORD-001-I1",
+          "raisedAt": "2026-11-05T11:38:05.074Z",
+          "raisedBy": {
+            "name": "sathya",
+            "team": "Marketing team"
+          },
+          "raisedTo": {
+            "name": "Clinical CAD team",
+            "team": "Clinical CAD team"
+          },
+          "resolvedAt": "2026-11-05T11:38:11.997Z",
+          "resolvedBy": {
+            "name": "planner_1",
+            "team": "Clinical CAD team"
+          },
+          "stage": "clinic",
+          "text": "ds"
+        }
+      ],
+      "labBy": "Man_1",
+      "qcBy": "QC_1"
+    }
+  ]
+}

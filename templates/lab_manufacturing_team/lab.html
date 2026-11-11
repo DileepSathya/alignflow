@@ -1,0 +1,548 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>V Clear Lab (Manufacturing team)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Layout: fixed left rail + scrolling workspace. Rail becomes a slide-in drawer under 900px. */
+:root{
+  --bg:#f3f6f7;
+  --surface:#ffffff;
+  --surface-2:#eaf0f2;
+  --ink:#10242b;
+  --ink-2:#4a6068;
+  --line:#d8e2e6;
+  --accent:#0b7a75;
+  --accent-ink:#ffffff;
+  --accent-soft:#d9efed;
+  --rail:#ffffff;--rail-strong:#10242b;
+  --rail-ink:#4a6068;
+  --rail-active:#d9efed;
+  --good:#1b7f4b; --good-bg:#dcf2e5;
+  --warn:#9a5b00; --warn-bg:#fdecc8;
+  --info:#235d9e; --info-bg:#dce9f8;
+  --violet:#5b44a8; --violet-bg:#e8e2f8;
+  --neutral:#4a6068; --neutral-bg:#e3eaed;
+  --danger:#b3261e;
+  --shadow:0 12px 40px rgba(16,36,43,.18);
+  color-scheme:light;
+  --font-display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
+  --font-body:"Instrument Sans","Segoe UI",system-ui,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:14px;line-height:1.5;margin:0}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+h1,h2,h3{font-family:var(--font-display);margin:0;text-wrap:balance;letter-spacing:-.01em}
+
+.app{display:grid;grid-template-columns:248px minmax(0,1fr);height:100%}
+
+/* Rail */
+.rail{background:var(--rail);border-right:1px solid var(--line);color:var(--rail-ink);display:flex;flex-direction:column;padding:20px 14px;gap:24px;overflow-y:auto}
+.brand{display:flex;align-items:center;gap:10px;padding:2px 8px;color:var(--rail-strong)}
+.brand-mark{width:34px;height:34px;border-radius:10px;background:var(--accent);display:grid;place-items:center;color:var(--accent-ink)}
+.brand b{font-family:var(--font-display);font-size:19px;letter-spacing:-.01em}
+.role{margin:0 8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);display:flex;align-items:center;gap:10px}
+.role>div:last-child{display:flex;flex-direction:column;min-width:0;line-height:1.3}
+.role small{font-size:12px;color:var(--ink-2)}
+.role span{color:var(--rail-strong);font-weight:600}
+.nav{display:flex;flex-direction:column;gap:4px}
+.nav a{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;color:var(--rail-ink);text-decoration:none;font-weight:500;transition:background .15s,color .15s}
+.nav a:hover{background:var(--surface-2);color:var(--rail-strong)}
+.nav a[aria-current="page"]{background:var(--rail-active);color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+.nav .count{margin-left:auto;font-family:var(--font-mono);font-size:12px;background:var(--surface-2);padding:1px 8px;border-radius:99px}
+.rail-foot{margin-top:auto;padding:12px 8px 0;border-top:1px solid var(--line);display:flex;align-items:center;gap:10px}
+.avatar{width:34px;height:34px;border-radius:50%;background:var(--rail-active);display:grid;place-items:center;color:var(--accent);font-weight:600;font-size:13px}
+.rail-foot div{line-height:1.25;min-width:0}
+.rail-foot strong{display:block;color:var(--rail-strong);font-weight:600}
+.rail-foot span{font-size:12px;opacity:.7}
+
+/* Main */
+.main{overflow-y:auto;min-width:0;display:flex;flex-direction:column}
+.topbar{display:none}
+.wrap{padding-block:28px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));width:100%;max-width:1180px;margin-inline:auto;display:flex;flex-direction:column;gap:20px}
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.page-head h1{font-size:30px;line-height:1.1}
+.page-head p{margin:6px 0 0;color:var(--ink-2)}
+
+.btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--surface);padding:9px 14px;border-radius:10px;font-weight:600;transition:background .15s,border-color .15s}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{background:transparent}
+
+.toolbar{display:flex;gap:12px;flex-wrap:wrap}
+.search{flex:1 1 280px;min-width:0;position:relative}
+.search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--ink-2);pointer-events:none}
+.field,.search input{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.search input{padding-left:38px}
+.field:focus,.search input:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-soft)}
+.toolbar select.field{flex:0 1 230px;width:auto;min-width:0}
+
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);font-weight:600;padding:12px 16px;background:var(--surface-2);white-space:nowrap}
+td{padding:14px 16px;border-top:1px solid var(--line);vertical-align:middle}
+tbody tr{transition:background .12s}
+tbody tr:hover{background:var(--surface-2)}
+tr.clickable{cursor:pointer}
+.oid{font-family:var(--font-mono);font-size:13px;font-weight:500}
+.sub{display:block;color:var(--ink-2);font-size:12px}
+.pt{font-weight:600}
+td.act{text-align:right;white-space:nowrap}
+
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:600;white-space:nowrap}
+.pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.p-neutral{color:var(--neutral);background:var(--neutral-bg)}
+.p-info{color:var(--info);background:var(--info-bg)}
+.p-warn{color:var(--warn);background:var(--warn-bg)}
+.p-violet{color:var(--violet);background:var(--violet-bg)}
+.p-good{color:var(--good);background:var(--good-bg)}
+.p-danger{color:var(--danger);background:#fbe0de}
+.stp.issue .dot{border-color:var(--danger);box-shadow:0 0 0 4px #fbe0de}.stp.issue .dot::after{background:var(--danger)}.stp.issue{color:var(--danger)}
+
+.viewbtn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--surface);border-radius:9px;padding:6px 12px;font-weight:600}
+.viewbtn:hover{border-color:var(--accent);color:var(--accent)}
+.viewbtn .ex{display:inline-grid;width:0;opacity:0;overflow:hidden;transition:width .15s,opacity .15s}
+tr:hover .viewbtn .ex,.viewbtn:focus-visible .ex{width:16px;opacity:1}
+@media (hover:none){.viewbtn .ex{width:16px;opacity:1}}
+
+.empty{padding:48px 16px;text-align:center;color:var(--ink-2)}
+.empty strong{display:block;color:var(--ink);font-family:var(--font-display);font-size:18px;margin-bottom:4px}
+.meta{color:var(--ink-2);font-size:13px}
+
+/* Dialogs */
+dialog{border:none;padding:0;background:var(--surface);color:var(--ink);border-radius:18px;box-shadow:var(--shadow);width:min(640px,calc(100vw - 24px));max-height:calc(100% - 24px);overflow:hidden}
+dialog::backdrop{background:rgba(6,18,22,.55)}
+dialog[open]{display:flex;flex-direction:column}
+.d-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:20px 22px 14px;border-bottom:1px solid var(--line)}
+.d-head h2{font-size:21px}
+.d-head p{margin:2px 0 0;color:var(--ink-2)}
+.iconbtn{border:1px solid var(--line);background:var(--surface);border-radius:9px;width:34px;height:34px;display:grid;place-items:center;flex:none}
+.iconbtn:hover{border-color:var(--accent)}
+.d-body{padding:18px 22px;overflow-y:auto;min-height:0}
+.d-foot{display:flex;justify-content:flex-end;gap:10px;padding:14px 22px;border-top:1px solid var(--line);flex-wrap:wrap}
+.form{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.form .full{grid-column:1/-1}
+label.l{display:flex;flex-direction:column;gap:6px;font-weight:600;font-size:13px;min-width:0}
+label.l .opt{font-weight:400;color:var(--ink-2)}
+.drop{border:1.5px dashed var(--line);border-radius:12px;padding:18px;display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center;color:var(--ink-2);background:var(--surface-2);cursor:pointer}
+.drop:hover{border-color:var(--accent)}
+.drop input{display:none}
+.drop strong{color:var(--ink)}
+.err{color:var(--danger);font-size:12px;font-weight:500;min-height:0}
+
+.facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 20px;margin:0 0 22px}
+.facts div{min-width:0}
+.facts dt{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);font-weight:600}
+.facts dd{margin:2px 0 0;font-weight:600;overflow-wrap:anywhere}
+.facts dd.mono{font-family:var(--font-mono);font-weight:500}
+h3.sec{font-size:15px;margin-bottom:12px}
+
+/* Status tree */
+.tree{list-style:none;margin:0;padding:0}
+.tree li{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:12px;position:relative;padding-bottom:16px}
+.tree li:last-child{padding-bottom:0}
+.tree li::before{content:"";position:absolute;left:13px;top:28px;bottom:0;width:2px;background:var(--line)}
+.tree li:last-child::before{display:none}
+.tree li.done::before{background:var(--accent)}
+.node{width:28px;height:28px;border-radius:50%;border:2px solid var(--line);background:var(--surface);display:grid;place-items:center;color:transparent;z-index:1}
+.tree li.done .node{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.tree li.current .node{border-color:var(--accent);box-shadow:0 0 0 5px var(--accent-soft)}
+.tree li.current .node::after{content:"";width:10px;height:10px;border-radius:50%;background:var(--accent)}
+.tree .name{font-weight:600;padding-top:3px}
+.tree li.todo .name{color:var(--ink-2);font-weight:500}
+.tree .when{font-family:var(--font-mono);font-size:12px;color:var(--ink-2);padding-top:5px}
+.tree .tag{font-size:11px;font-weight:600;color:var(--accent);margin-left:8px;letter-spacing:.04em;text-transform:uppercase}
+
+.toast{position:fixed;left:50%;transform:translate(-50%,20px);bottom:calc(24px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:11px 18px;border-radius:12px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:50;max-width:calc(100vw - 32px)}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+.scrim{display:none}
+
+@media (max-width:900px){
+  .app{grid-template-columns:minmax(0,1fr)}
+  .rail{position:fixed;inset:0 auto 0 0;width:272px;max-width:86vw;z-index:30;transform:translateX(-100%);transition:transform .22s;padding-top:calc(20px + env(safe-area-inset-top,0px));padding-bottom:calc(20px + env(safe-area-inset-bottom,0px))}
+  body.nav-open .rail{transform:none}
+  body.nav-open .scrim{display:block;position:fixed;inset:0;background:rgba(6,18,22,.5);z-index:20}
+  .topbar{display:flex;align-items:center;gap:12px;padding:10px max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));background:var(--surface);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+  .topbar b{font-family:var(--font-display);font-size:17px}
+  .wrap{padding-block:20px 40px}
+  .page-head h1{font-size:25px}
+}
+@media (max-width:720px){
+  .facts{grid-template-columns:1fr}
+  .form{grid-template-columns:1fr}
+  .tablewrap{overflow:visible}
+  table.cards,table.cards tbody,table.cards tr,table.cards td{display:block}
+  table.cards thead{display:none}
+  table.cards tr{padding:14px 16px;border-top:1px solid var(--line);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:center}
+  table.cards tbody tr:first-child{border-top:none}
+  table.cards td{border:none;padding:0;min-width:0}
+  table.cards td[data-l]::before{content:attr(data-l) " ";color:var(--ink-2);font-size:12px}
+  table.cards td.c-oid{grid-column:1}
+  table.cards td.c-status{grid-column:2;grid-row:1;justify-self:end}
+  table.cards td.c-pt,table.cards td.c-clinic{grid-column:1/-1}
+  table.cards td.act{grid-column:1/-1;text-align:left;margin-top:4px}
+  table.cards.clin td{grid-column:1/-1}
+  .btn.up{width:100%;justify-content:center}
+  .page-head .btn{width:100%;justify-content:center}
+  .toolbar select.field{flex:1 1 100%}
+}
+
+/* Order detail page */
+.back{color:var(--accent);font-weight:600;text-decoration:none;font-size:13px;width:max-content}
+.back:hover{text-decoration:underline}
+.dhead{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.dhead h1{font-size:28px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.dhead h1 .pill{font-family:var(--font-body);font-size:11px;letter-spacing:0}
+.dhead p{margin:6px 0 0;color:var(--ink-2)}
+.dact{display:flex;gap:10px;flex-wrap:wrap}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.stepper{list-style:none;margin:0;padding:20px 28px;display:flex;background:var(--surface);border:1px solid var(--line);border-radius:14px}
+.stp{flex:1;position:relative;display:flex;flex-direction:column;gap:8px;font-size:12px;font-weight:500;color:var(--ink-2)}
+.stp::before{content:"";position:absolute;top:8px;left:22px;right:6px;height:2px;background:var(--line)}
+.stp:last-child::before{display:none}
+.stp.done::before{background:var(--accent)}
+.stp .dot{width:18px;height:18px;border-radius:50%;border:2px solid var(--line);background:var(--surface);position:relative;z-index:1}
+.stp.done .dot{background:var(--accent);border-color:var(--accent)}
+.stp.current .dot{border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+.stp.current .dot::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--accent)}
+.stp.current,.stp.done{color:var(--ink);font-weight:600}
+.banner{background:var(--accent-soft);color:var(--ink);border-radius:10px;padding:10px 14px;font-size:13px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
+.grid2.docs{grid-template-columns:1.25fr 1fr}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.card-h{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);font-family:var(--font-display);font-weight:700;font-size:15px}
+.card-h .n{font-family:var(--font-mono);font-size:11px;background:var(--surface-2);border-radius:99px;padding:1px 8px;margin-left:6px;font-weight:500}
+.vo{display:inline-flex;gap:6px;align-items:center;font-family:var(--font-body);font-size:11px;font-weight:500;color:var(--ink-2);background:var(--surface-2);border-radius:99px;padding:3px 10px}
+.card .facts{margin:0;padding:16px 18px}
+.facts .w{grid-column:1/-1}
+.dl{list-style:none;margin:0;padding:0}
+.doc{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line)}
+.ext{width:38px;height:38px;border-radius:9px;background:var(--surface-2);display:grid;place-items:center;font-size:10px;font-weight:600;color:var(--ink-2);flex:none}
+.dinfo{flex:1;min-width:0;display:flex;flex-direction:column;font-size:12px;color:var(--ink-2)}
+.dinfo b{color:var(--ink);font-size:13px;overflow-wrap:anywhere}
+.sbtn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:5px 12px;font-size:12px;font-weight:600}
+.sbtn:hover{border-color:var(--accent);color:var(--accent)}
+.dz{display:flex;flex-direction:column;align-items:center;gap:2px;margin:16px 18px;padding:22px 12px;border:1.5px dashed var(--accent);background:var(--accent-soft);border-radius:10px;text-align:center;font-size:13px;cursor:pointer;color:var(--ink-2)}
+.dz u{color:var(--accent);font-weight:600}.dz small{font-size:11px}.dz input{display:none}
+.cms{list-style:none;margin:0;padding:0 18px}
+.cm{padding:12px 0;border-bottom:1px solid var(--line)}
+.cm span{font-size:12px;color:var(--ink-2);margin-left:6px}.cm p{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.nocm{text-align:center;color:var(--ink-2);padding:24px 18px;margin:0;font-size:13px}
+.cform{display:flex;flex-direction:column;align-items:flex-end;gap:10px;padding:14px 18px 18px;border-top:1px solid var(--line)}
+.cform textarea{resize:vertical}
+.sbtn.del{color:var(--danger)}.sbtn.del:hover{border-color:var(--danger);color:var(--danger)}.lk{color:var(--ink-2);display:grid;place-items:center;width:28px;flex:none}.pf{padding:16px 18px}.doc{flex-wrap:wrap}.dinfo{flex:1 1 200px;min-width:0}.hint{margin:0;padding:10px 18px;font-size:12px;color:var(--ink-2);background:var(--surface-2);border-bottom:1px solid var(--line)}.dbtn{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-left:auto}.pfact{display:flex;justify-content:flex-end;gap:10px}.cm .tm{margin-left:0;color:var(--ink-2)}
+@media (max-width:720px){.grid2,.grid2.docs{grid-template-columns:1fr}.stepper{padding:16px 14px}.stp{font-size:11px}.dhead .dact{width:100%}.dhead .btn{flex:1;justify-content:center}.doc{flex-wrap:wrap}.dinfo{flex-basis:calc(100% - 60px)}}
+.tabs{display:flex;gap:8px;flex-wrap:wrap}.tab{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:6px 14px;font-weight:600;font-size:13px}.tab:hover{border-color:var(--accent)}.tab.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}.tab span{opacity:.7;margin-left:6px;font-family:var(--font-mono);font-size:11px}.stsel{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px}.stsel select{width:auto;padding:8px 10px}
+@media (max-width:720px){table.cards td[data-l]{grid-column:1/-1}.stsel{width:100%}.stsel select{flex:1}}
+.btn.sm{padding:6px 12px;font-size:13px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="app">
+  <aside class="rail" id="rail" aria-label="Main navigation">
+    <div class="brand">
+      <span class="brand-mark"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15c0-5 3-9 8-9s8 4 8 9"/><path d="M4 15c2 3 5 3 8 0 3 3 6 3 8 0"/></svg></span>
+      <b>AlignFlow</b>
+    </div>
+    <div class="role"><div class="avatar">MV</div><div><span>Manoj Verma</span><small>Lab &amp; Manufacturing team</small></div></div>
+    <nav class="nav">
+      <a href="#orders" id="nav-orders"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><path d="M9 12h6M9 16h4"/></svg>Orders<span class="count" id="cnt-orders">0</span></a>
+      <a href="#clinics" id="nav-clinics" style="display:none"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V8l8-4 8 4v13"/><path d="M2 21h20"/><path d="M12 10v5M9.5 12.5h5"/></svg>Clinics<span class="count" id="cnt-clinics">0</span></a>
+    </nav>
+    
+  </aside>
+  <div class="scrim" id="scrim"></div>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="iconbtn" id="menuBtn" aria-label="Open navigation"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      <b id="topTitle">Orders</b>
+    </header>
+
+    <main class="wrap" id="view"></main>
+  </div>
+</div>
+
+<!-- Upload order -->
+<dialog id="dlgUpload" aria-labelledby="upTitle">
+  <form id="upForm" method="dialog" novalidate style="display:contents">
+    <div class="d-head"><div><h2 id="upTitle">Upload patient details</h2><p>Create a new order from the details received on WhatsApp.</p></div><button type="button" class="iconbtn" data-close aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div class="d-body">
+      <div class="form">
+        <label class="l" for="upName">Patient name<input class="field" id="upName" autocomplete="off" placeholder="e.g. Ananya Reddy"></label>
+        <label class="l" for="upAge">Age <span class="opt">(optional)</span><input class="field" id="upAge" inputmode="numeric" placeholder="e.g. 27"></label>
+        <label class="l" for="upClinic">Clinic<select class="field" id="upClinic"></select></label>
+        <label class="l" for="upDentist">Dentist<input class="field" id="upDentist" autocomplete="off" placeholder="Auto-filled from clinic"></label>
+        <label class="l" for="upPhone">Clinic contact number<input class="field" id="upPhone" inputmode="tel" placeholder="Auto-filled from clinic"></label>
+        <label class="l" for="upEmail">Clinic email<input class="field" id="upEmail" type="email" placeholder="Auto-filled from clinic"></label>
+        <label class="l full" for="upNotes">Case notes <span class="opt">(optional)</span><textarea class="field" id="upNotes" rows="3" placeholder="Chief complaint, crowding, bite, expectations"></textarea></label>
+        <div class="full">
+          <label class="drop" for="upFiles"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3"/></svg><strong id="dropLabel">Attach photos, X-rays or scans</strong><span>JPG, PNG, PDF, STL. Tap to choose files.</span><input type="file" id="upFiles" multiple></label>
+        </div>
+        <div class="full err" id="upErr" role="alert"></div>
+      </div>
+    </div>
+    <div class="d-foot"><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" class="btn primary">Submit order</button></div>
+  </form>
+</dialog>
+
+
+<!-- Add clinic -->
+<dialog id="dlgClinic" aria-labelledby="clTitle">
+  <form id="clForm" method="dialog" novalidate style="display:contents">
+    <div class="d-head"><div><h2 id="clTitle">Add clinic</h2><p>Save a clinic so it can be picked when uploading orders.</p></div><button type="button" class="iconbtn" data-close aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div class="d-body">
+      <div class="form">
+        <label class="l full" for="clName">Clinic name<input class="field" id="clName" autocomplete="off" placeholder="e.g. Bright Bite Dental"></label>
+        <label class="l" for="clDentist">Dentist<input class="field" id="clDentist" autocomplete="off" placeholder="e.g. Dr. Kiran Rao"></label>
+        <label class="l" for="clPhone">Contact number<input class="field" id="clPhone" inputmode="tel" placeholder="+91 98480 00000"></label>
+        <label class="l" for="clEmail">Email <span class="opt">(optional)</span><input class="field" id="clEmail" type="email" placeholder="clinic@example.com"></label>
+        <label class="l" for="clCity">Area / city<input class="field" id="clCity" autocomplete="off" placeholder="e.g. Banjara Hills, Hyderabad"></label>
+        <div class="full err" id="clErr" role="alert"></div>
+      </div>
+    </div>
+    <div class="d-foot"><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" class="btn primary">Add clinic</button></div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+  // status: 0 not started, 1 in process, 2 QC approval pending, 3 QC issue raised, 4 completed (approved by QC)
+  var STEPS=[
+    {n:"Manufacturing not started",c:"p-neutral"},
+    {n:"Manufacturing in process",c:"p-info"},
+    {n:"QC approval pending",c:"p-warn"},
+    {n:"QC issue raised",c:"p-danger"},
+    {n:"Manufacturing completed",c:"p-good"}
+  ];
+  var TODAY=new Date(2026,10,4);
+  function addDays(d,n){var x=new Date(d.getTime());x.setDate(x.getDate()+n);return x}
+  function fmt(d){return d.toLocaleDateString("en-GB",{day:"numeric",month:"short"})}
+
+  var clinics=[
+    {id:1,name:"Smile Studio Dental",dentist:"Dr. Kiran Rao",phone:"+91 98480 11201",email:"hello@smilestudio.example",city:"Jubilee Hills, Hyderabad"},
+    {id:2,name:"Pearl Dental Care",dentist:"Dr. Sneha Iyer",phone:"+91 99120 45678",email:"care@pearldental.example",city:"Gachibowli, Hyderabad"},
+    {id:3,name:"Dentique Clinic",dentist:"Dr. Arjun Menon",phone:"+91 90300 22984",email:"info@dentique.example",city:"Kondapur, Hyderabad"},
+    {id:4,name:"Orthoworks Dental Hub",dentist:"Dr. Imran Qureshi",phone:"+91 98660 77310",email:"desk@orthoworks.example",city:"Madhapur, Hyderabad"},
+    {id:5,name:"Bright Bite Dental",dentist:"Dr. Divya Chandra",phone:"+91 93910 60452",email:"hi@brightbite.example",city:"Secunderabad"},
+    {id:6,name:"Molar & Co.",dentist:"Dr. Rohan Sethi",phone:"+91 97010 88123",email:"team@molarco.example",city:"Begumpet, Hyderabad"}
+  ];
+  var MY="Lab team",ME="Manoj Verma",CADT="Clinical CAD team";
+  var clinics=[
+    {id:1,name:"Smile Craft Dental",dentist:"Dr. Ananya Rao",phone:"+91 98480 11201",email:"hello@smilecraft.example",city:"Jubilee Hills, Hyderabad"},
+    {id:2,name:"Orthoworks Clinic",dentist:"Dr. Rahul Menon",phone:"+91 98660 77310",email:"desk@orthoworks.example",city:"Madhapur, Hyderabad"},
+    {id:3,name:"Dental Studio 360",dentist:"Dr. Farah Khan",phone:"+91 99120 45678",email:"care@studio360.example",city:"Gachibowli, Hyderabad"},
+    {id:4,name:"Bright Arch Dental",dentist:"Dr. Vikram Shah",phone:"+91 93910 60452",email:"hi@brightarch.example",city:"Secunderabad"}
+  ];
+  var ORD=[["VC-2611-0045","Imran Sheikh",3,"Both arches","02 Nov 2026",0,"Sunita Rao"],["VC-2610-0044","Kavya Reddy",1,"Lower arch","30 Oct 2026",1,"Deepak Nair"],["VC-2610-0041","Arjun Patel",4,"Both arches","28 Oct 2026",1,"Anjali Desai"],["VC-2610-0039","Meera Iyer",2,"Upper arch","26 Oct 2026",2,"Deepak Nair"],["VC-2610-0036","Sanjay Gupta",3,"Both arches","23 Oct 2026",3,"Anjali Desai"],["VC-2610-0033","Neha Kapoor",4,"Lower arch","21 Oct 2026",4,"Sunita Rao"]];
+  var orders=ORD.map(function(a){
+    var cl=clinics.filter(function(x){return x.id===a[2]})[0],cr=new Date(a[4]);cr.setHours(0,0,0,0);
+    function at(h,m){var d=new Date(cr.getTime());d.setHours(h,m);return d}
+    var docs=[{name:"Case sheet.pdf",size:219136,at:at(10,15),by:"Ravi Kumar",team:"Marketing team"},{name:"Upper arch scan.stl",size:8808038,at:at(10,15),by:"Ravi Kumar",team:"Marketing team"},{name:"Lower arch scan.stl",size:8283750,at:at(10,15),by:"Ravi Kumar",team:"Marketing team"},
+      {name:"Treatment plan.pdf",size:1887436,at:at(14,5),by:a[6],team:CADT},{name:"Aligner setup.stl",size:6291456,at:at(14,5),by:a[6],team:CADT}];
+    var cms=[{by:a[6],team:CADT,at:at(14,20),text:"Setup is approved. Please print and manufacture the aligners. Priority case."},{by:ME,team:MY,at:at(16,40),text:"Received. Printing starts today."}];
+    if(a[5]>=2){cms.push({by:ME,team:MY,at:at(18,35),text:"Manufacturing is done. Sending to QC."})}
+    return {id:a[0],patient:a[1],age:22+(+a[0].slice(-2)*7)%18,clinicId:a[2],dentist:cl.dentist,kind:a[3],status:a[5],by:a[6],created:cr,notes:"",docs:docs,comments:cms};
+  });
+  var nextNo=1049,nextClinic=7;
+  var state={q:"",status:"all",cq:"",clinic:"all"};
+
+  var $=function(id){return document.getElementById(id)};
+  function esc(s){var d=document.createElement("div");d.textContent=s==null?"":String(s);return d.innerHTML}
+  function clinicOf(id){return clinics.filter(function(c){return c.id===id})[0]}
+  function toast(m){var t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(toast.h);toast.h=setTimeout(function(){t.classList.remove("show")},2600)}
+
+  var I={
+    search:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
+    plus:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+    up:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3"/></svg>',
+    ex:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>',
+    ck:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>'
+  };
+
+  function pill(i){return '<span class="pill '+STEPS[i].c+'">'+esc(STEPS[i].n)+'</span>'}
+
+  function viewOrders(){
+    var cl='<option value="all">All clinics</option>'+clinics.map(function(c){return '<option value="'+c.id+'"'+(String(state.clinic)===String(c.id)?' selected':'')+'>'+esc(c.name)+'</option>'}).join("");
+    return '<div class="page-head"><div><h1>Orders</h1><p>Orders approved by the clinic and assigned by the CAD team appear here. Start manufacturing, then send the order to QC.</p></div></div>'+
+      '<div class="tabs" id="tabs"></div><div class="toolbar"><div class="search">'+I.search+'<input id="q" type="search" placeholder="Search patient, clinic or order ID" value="'+esc(state.q)+'" aria-label="Search orders"></div>'+
+      '<select class="field" id="clinicSel" aria-label="Clinic">'+cl+'</select></div><div class="panel"><div class="tablewrap" id="ordersTable"></div></div>';
+  }
+  function sendQC(id){var o=orders.filter(function(x){return x.id===id})[0];if(!o||o.status>=2)return;o.status++;renderOrderRows();toast("Status updated")}
+  function actLabel(o){return o.status===0?"Start manufacturing":"Send to QC"}
+  function qcBtn(o){if(o.status>=2)return '<span class="pill p-violet">Sent to QC</span>';return state.cqc===o.id?'<button class="btn primary" data-act="qc">Confirm send to QC</button><button class="btn" data-act="qcx">Cancel</button>':'<button class="btn primary" data-act="qc">Send to QC</button>'}
+  function renderOrderRows(){
+    var q=state.q.trim().toLowerCase();
+    var base=orders.filter(function(o){var c=clinicOf(o.clinicId);return (state.clinic==="all"||String(o.clinicId)===String(state.clinic))&&(!q||(o.patient+" "+c.name+" "+o.id+" "+o.by).toLowerCase().indexOf(q)>-1)});
+    var tabs=[["all","All orders"]].concat(STEPS.map(function(s,i){return [String(i),s.n]}));
+    $("tabs").innerHTML=tabs.map(function(t){var n=t[0]==="all"?base.length:base.filter(function(o){return String(o.status)===t[0]}).length;return '<button type="button" class="tab'+(String(state.status)===t[0]?' on':'')+'" data-k="'+t[0]+'">'+esc(t[1])+'<span>'+n+'</span></button>'}).join("");
+    var list=base.filter(function(o){return state.status==="all"||String(o.status)===String(state.status)});
+    var el=$("ordersTable");
+    if(!list.length){el.innerHTML='<div class="empty"><strong>No orders match</strong>Try a different search or filter.</div>';return}
+    el.innerHTML='<table class="cards"><thead><tr><th>Assigned by</th><th>Order ID</th><th>Clinic</th><th style="text-align:right">Action</th></tr></thead><tbody>'+
+      list.map(function(o){var c=clinicOf(o.clinicId);var act=o.status>=2?pill(o.status):'<button class="btn primary sm" data-qc="'+o.id+'">'+actLabel(o)+'</button>';
+        return '<tr class="clickable" data-id="'+o.id+'"><td class="c-pt" data-l="Assigned by"><span class="pt">'+esc(o.by)+'</span><span class="sub">'+CADT+'</span></td><td class="c-oid"><span class="oid">'+esc(o.id)+'</span><span class="sub">'+esc(o.patient)+'</span></td><td class="c-clinic">'+esc(c.name)+'</td><td class="act">'+act+'</td></tr>'}).join("")+'</tbody></table>';
+  }
+
+  function viewClinics(){
+    return '<div class="page-head"><div><h1>Clinics</h1><p>Partner clinics you contact over WhatsApp.</p></div>'+
+      '<button class="btn primary" id="btnAddClinic">'+I.plus+'Add clinic</button></div>'+
+      '<div class="toolbar"><div class="search">'+I.search+'<input id="cq" type="search" placeholder="Search clinic, dentist or area" value="'+esc(state.cq)+'" aria-label="Search clinics"></div></div>'+
+      '<div class="panel"><div class="tablewrap" id="clinicTable"></div></div>';
+  }
+  function renderClinicRows(){
+    var q=state.cq.trim().toLowerCase();
+    var list=clinics.filter(function(c){return !q||[c.name,c.dentist,c.city].join(" ").toLowerCase().indexOf(q)>-1});
+    var el=$("clinicTable");
+    if(!list.length){el.innerHTML='<div class="empty"><strong>No clinics found</strong>Check the spelling, or add this clinic.</div>';return}
+    el.innerHTML='<table class="cards clin"><thead><tr><th>Clinic</th><th>Dentist</th><th>Contact</th><th>Area</th><th style="text-align:right">Orders</th></tr></thead><tbody>'+
+      list.map(function(c){var n=orders.filter(function(o){return o.clinicId===c.id}).length;return '<tr>'+
+        '<td><span class="pt">'+esc(c.name)+'</span></td><td>'+esc(c.dentist)+'</td>'+
+        '<td><span class="oid">'+esc(c.phone)+'</span>'+(c.email?'<span class="sub">'+esc(c.email)+'</span>':'')+'</td>'+
+        '<td>'+esc(c.city)+'</td><td class="act"><span class="meta">'+n+' '+(n===1?'order':'orders')+'</span></td></tr>'}).join("")+
+      '</tbody></table>';
+  }
+
+  function route(){
+    var raw=(location.hash||"#orders").replace("#","");var h=raw==="clinics"?"clinics":"orders";
+    var detail=raw.indexOf("order/")===0?raw.slice(6):null;
+    $("view").innerHTML=detail?viewDetail(detail):h==="orders"?viewOrders():viewClinics();
+    $("nav-orders").removeAttribute("aria-current");$("nav-clinics").removeAttribute("aria-current");
+    $("nav-"+h).setAttribute("aria-current","page");
+    $("topTitle").textContent=detail?"Order details":h==="orders"?"Orders":"Clinics";
+    document.body.classList.remove("nav-open");
+    if(detail){document.querySelector(".main").scrollTop=0}else if(h==="orders"){renderOrderRows();
+      $("q").addEventListener("input",function(e){state.q=e.target.value;renderOrderRows()});
+      $("tabs").addEventListener("click",function(e){var b=e.target.closest(".tab");if(b){state.status=b.getAttribute("data-k");renderOrderRows()}});
+      $("clinicSel").addEventListener("change",function(e){state.clinic=e.target.value;renderOrderRows()});
+      $("ordersTable").addEventListener("click",function(e){
+        var qb=e.target.closest("[data-qc]");if(qb){sendQC(qb.getAttribute("data-qc"));return}var b=e.target.closest("[data-view]");var r=e.target.closest("tr[data-id]");
+        var id=b?b.getAttribute("data-view"):(r&&r.getAttribute("data-id"));
+        if(id)location.hash="#order/"+id;
+      });
+    }else{renderClinicRows();
+      $("cq").addEventListener("input",function(e){state.cq=e.target.value;renderClinicRows()});
+      $("btnAddClinic").addEventListener("click",openClinic);
+    }
+    $("cnt-orders").textContent=orders.length;$("cnt-clinics").textContent=clinics.length;
+  }
+
+  function ext(n){return (n.split(".").pop()||"").toUpperCase().slice(0,4)}
+  function kb(n){return n>=1048576?(n/1048576).toFixed(1)+" MB":Math.max(1,Math.round(n/1024))+" KB"}
+  function stamp(d){return d.getDate()+" "+d.toLocaleString("en-GB",{month:"short"})+", "+d.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}
+  function seedDocs(day){var at=new Date(day.getTime());at.setHours(10,15);return [["Case sheet.pdf",219136],["Upper arch scan.stl",8808038],["Lower arch scan.stl",8283750],["Panoramic X-ray.jpg",1258291]].map(function(d){return {name:d[0],size:d[1],at:at,by:"Ravi Kumar",team:"Marketing team"}})}
+  function mkDocs(fl){return Array.prototype.map.call(fl,function(f){return {name:f.name,size:f.size,at:new Date(),by:ME,team:MY,url:URL.createObjectURL(f)}})}
+  function fact(l,v,w,m){return '<div'+(w?' class="w"':'')+'><dt>'+l+'</dt><dd'+(m?' class="mono"':'')+'>'+esc(v)+'</dd></div>'}
+  var LOCK='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>';
+
+  function patientCard(o){
+    if(state.edit===o.id)return '<section class="card"><div class="card-h">Patient<span class="vo">Editing</span></div><div class="form pf"><label class="l" for="pfName">Patient name<input class="field" id="pfName" value="'+esc(o.patient)+'"></label><label class="l" for="pfAge">Age<input class="field" id="pfAge" inputmode="numeric" value="'+esc(o.age||"")+'"></label><label class="l full" for="pfNotes">Case notes<textarea class="field" id="pfNotes" rows="3" placeholder="Chief complaint, crowding, bite, expectations">'+esc(o.notes)+'</textarea></label><div class="full err" id="pfErr" role="alert"></div><div class="full pfact"><button class="btn ghost" data-act="pcancel">Cancel</button><button class="btn primary" data-act="psave">Save changes</button></div></div></section>';
+    return '<section class="card"><div class="card-h">Patient<span class="vo">'+LOCK+'View only</span></div><dl class="facts">'+fact("Patient name",o.patient)+fact("Patient ID","PT-"+o.id.split("-").pop(),0,1)+fact("Age",o.age?o.age+" yrs":"Not provided")+fact("Order ID",o.id,0,1)+fact("Case notes",o.notes||"No notes added",1)+'</dl></section>';
+  }
+  function viewDetail(id){
+    var o=orders.filter(function(x){return x.id===id})[0];
+    if(!o)return '<a class="back" href="#orders" data-back="1">&larr; Back to orders</a><div class="panel"><div class="empty"><strong>Order not found</strong>It may have been removed.</div></div>';
+    if(state.cur!==id){state.edit=null;state.cdel=null;state.cqc=null}state.cur=id;var c=clinicOf(o.clinicId);
+    var st=o.status,sg=st<=1?st:st<=3?2:3;
+    var stepNames=["Not started","In process","QC approval"+(st===3?" (issue raised)":""),"Completed"];
+    var steps=stepNames.map(function(n,i){var k=i<sg?"done":i===sg?(st===3?"current issue":"current"):"";return '<li class="stp '+k+'"><span class="dot"></span><span>'+esc(n)+'</span></li>'}).join("");
+    var docs=o.docs.map(function(d,i){return '<li class="doc"><span class="ext">'+esc(ext(d.name))+'</span><div class="dinfo"><b>'+esc(d.name)+'</b><span>Uploaded by <strong>'+esc(d.by)+'</strong> ('+esc(d.team)+') &middot; '+stamp(d.at)+' &middot; '+kb(d.size)+'</span></div><div class="dbtn"><button class="sbtn" data-act="view" data-i="'+i+'">View</button><button class="sbtn" data-act="dl" data-i="'+i+'">Download</button>'+(false?(state.cdel===o.id+":"+i?'<button class="sbtn del" data-act="del" data-i="'+i+'">Confirm delete</button><button class="sbtn" data-act="dcancel">Cancel</button>':'<button class="sbtn del" data-act="del" data-i="'+i+'">Delete</button>'):'')+'</div></li>'}).join("");
+    var cms=o.comments.length?'<ul class="cms">'+o.comments.map(function(m){return '<li class="cm"><b>'+esc(m.by)+'</b> <span class="tm">('+esc(m.team)+')</span><span>'+stamp(m.at)+'</span><p>'+esc(m.text)+'</p></li>'}).join("")+'</ul>':'<p class="nocm">No comments yet. Start the conversation below.</p>';
+    return '<a class="back" href="#orders" data-back="1">&larr; Back to orders</a>'+
+    '<div class="dhead"><div><h1>'+esc(o.patient)+' '+pill(o.status)+'</h1><p>Order <span class="oid">'+esc(o.id)+'</span> &middot; Assigned by '+esc(o.by)+' ('+CADT+') &middot; Uploaded '+fmt(o.created)+'</p></div>'+
+    '<div class="dact">'+(o.status<2?'<button class="btn primary" data-act="advance">'+actLabel(o)+'</button>':o.status<4?'<label class="stsel">QC approval<select class="field" id="stSel">'+[[2,"Pending"],[3,"Raised issue"],[4,"Approved"]].map(function(p){return '<option value="'+p[0]+'"'+(p[0]===o.status?' selected':'')+'>'+p[1]+'</option>'}).join("")+'</select></label>':'')+'</div></div>'+
+    '<ol class="stepper" aria-label="Order status">'+steps+'</ol>'+
+    '<div class="banner">Order, patient and clinic details are view-only. Update the manufacturing status, comment, and send the order to QC when manufacturing is done.</div>'+
+    '<div class="grid2">'+patientCard(o)+
+      ''+
+    '<section class="card"><div class="card-h">Clinic<span class="vo">'+LOCK+'View only</span></div><dl class="facts">'+
+      fact("Clinic name",c.name)+fact("Dentist",o.dentist)+fact("Contact",o.phone||c.phone,0,1)+fact("Email",o.email||c.email||"Not provided")+fact("Area",c.city,1)+'</dl></section></div>'+
+    '<div class="grid2 docs"><section class="card"><div class="card-h"><span>Documents<span class="n">'+o.docs.length+'</span></span></div><p class="hint">Documents are view-only for the Lab team. You can view and download them.</p><ul class="dl">'+docs+'</ul>'+
+      '</section>'+
+    '<section class="card"><div class="card-h"><span>Comments<span class="n">'+o.comments.length+'</span></span></div>'+cms+
+      '<div class="cform"><textarea class="field" id="cmt" rows="3" placeholder="Write a comment for the CAD team"></textarea><button class="btn primary" id="post" data-act="post" disabled>Post comment</button></div></section></div>';
+  }
+
+  function openUpload(){
+    var sel=$("upClinic");
+    sel.innerHTML='<option value="">Select a clinic</option>'+clinics.map(function(c){return '<option value="'+c.id+'">'+esc(c.name)+'</option>'}).join("");
+    $("upForm").reset();$("upErr").textContent="";$("dropLabel").textContent="Attach photos, X-rays or scans";
+    $("dlgUpload").showModal();$("upName").focus();
+  }
+  $("upClinic").addEventListener("change",function(e){var c=clinicOf(+e.target.value);$("upDentist").value=c?c.dentist:"";$("upPhone").value=c?c.phone:"";$("upEmail").value=c?(c.email||""):""});
+  $("upFiles").addEventListener("change",function(e){var n=e.target.files.length;$("dropLabel").textContent=n?n+(n===1?" file attached":" files attached"):"Attach photos, X-rays or scans"});
+  $("upForm").addEventListener("submit",function(e){
+    e.preventDefault();
+    var name=$("upName").value.trim(),cid=+$("upClinic").value,den=$("upDentist").value.trim();
+    if(!name){$("upErr").textContent="Enter the patient name.";$("upName").focus();return}
+    if(!cid){$("upErr").textContent="Choose the clinic this patient belongs to.";$("upClinic").focus();return}
+    var ph=$("upPhone").value.trim(),em=$("upEmail").value.trim();
+    if(!ph){$("upErr").textContent="Enter the clinic contact number.";$("upPhone").focus();return}
+    if(!em||!/^\S+@\S+\.\S+$/.test(em)){$("upErr").textContent="Enter a valid clinic email address.";$("upEmail").focus();return}
+    var o={id:"ORD-"+(nextNo++),phone:ph,email:em,patient:name,age:parseInt($("upAge").value,10)||null,clinicId:cid,dentist:den||clinicOf(cid).dentist,status:0,created:TODAY,notes:$("upNotes").value.trim(),docs:mkDocs($("upFiles").files),comments:[]};
+    orders.unshift(o);$("dlgUpload").close();
+    state.q="";state.status="all";
+    if(location.hash==="#clinics")location.hash="#orders";else route();
+    toast("Order "+o.id+" submitted for "+name);
+  });
+
+  function openClinic(){$("clForm").reset();$("clErr").textContent="";$("dlgClinic").showModal();$("clName").focus()}
+  $("clForm").addEventListener("submit",function(e){
+    e.preventDefault();
+    var name=$("clName").value.trim(),den=$("clDentist").value.trim(),ph=$("clPhone").value.trim();
+    if(!name||!den||!ph){$("clErr").textContent="Clinic name, dentist and contact number are required.";return}
+    var em=$("clEmail").value.trim();
+    if(em&&!/^\S+@\S+\.\S+$/.test(em)){$("clErr").textContent="That email address looks incomplete.";return}
+    clinics.unshift({id:nextClinic++,name:name,dentist:den,phone:ph,email:em,city:$("clCity").value.trim()||"Not specified"});
+    $("dlgClinic").close();state.cq="";route();toast(name+" added to clinics");
+  });
+
+  document.addEventListener("click",function(e){
+    var cl=e.target.closest("[data-close]");if(cl){var d=cl.closest("dialog");if(d)d.close()}
+    if(e.target.tagName==="DIALOG")e.target.close();
+  });
+  $("menuBtn").addEventListener("click",function(){document.body.classList.add("nav-open")});
+  $("scrim").addEventListener("click",function(){document.body.classList.remove("nav-open")});
+  function curOrder(){return orders.filter(function(x){return x.id===state.cur})[0]}
+  function addFiles(fl){var o=curOrder();if(!o||!fl.length)return;o.docs=o.docs.concat(mkDocs(fl));$("view").innerHTML=viewDetail(o.id);toast(fl.length+(fl.length===1?" document":" documents")+" uploaded")}
+  var vw=$("view");
+  vw.addEventListener("click",function(e){
+    var b=e.target.closest("[data-act]");var o=curOrder();if(!b||!o)return;
+    var a=b.getAttribute("data-act");
+    if(a==="cfocus"){var t=$("cmt");t.focus();t.scrollIntoView({block:"center"})}
+    else if(a==="pick"){$("dFiles").click()}
+    else if(a==="advance"){if(o.status>=2)return;o.status++;state.status="all";goOrders();toast("Status updated")}
+    else if(a==="qcx"){state.cqc=null;vw.innerHTML=viewDetail(o.id)}
+    else if(a==="del"){var di=+b.getAttribute("data-i"),dd=o.docs[di];if(!dd||dd.team!==MY)return;var key=o.id+":"+di;if(state.cdel!==key){state.cdel=key;vw.innerHTML=viewDetail(o.id);return}state.cdel=null;if(dd.url)URL.revokeObjectURL(dd.url);o.docs.splice(di,1);vw.innerHTML=viewDetail(o.id);toast("Document deleted")}
+    else if(a==="dcancel"){state.cdel=null;vw.innerHTML=viewDetail(o.id)}
+    else if(a==="pedit"){state.edit=o.id;vw.innerHTML=viewDetail(o.id)}
+    else if(a==="pcancel"){state.edit=null;vw.innerHTML=viewDetail(o.id)}
+    else if(a==="psave"){var nm=$("pfName").value.trim();if(!nm){$("pfErr").textContent="Patient name can't be empty.";return}o.patient=nm;o.age=parseInt($("pfAge").value,10)||null;o.notes=$("pfNotes").value.trim();state.edit=null;vw.innerHTML=viewDetail(o.id);toast("Patient details updated")}
+    else if(a==="post"){var v=$("cmt").value.trim();if(!v)return;o.comments.push({by:ME,team:MY,at:new Date(),text:v});vw.innerHTML=viewDetail(o.id);toast("Comment posted")}
+    else{var d=o.docs[+b.getAttribute("data-i")];if(!d)return;
+      if(!d.url){toast("Sample file: no preview in this prototype");return}
+      if(a==="view")window.open(d.url,"_blank");
+      else{var l=document.createElement("a");l.href=d.url;l.download=d.name;document.body.appendChild(l);l.click();l.remove()}}
+  });
+  vw.addEventListener("input",function(e){if(e.target.id==="cmt")$("post").disabled=!e.target.value.trim()});
+  vw.addEventListener("change",function(e){if(e.target.id==="dFiles")addFiles(e.target.files);if(e.target.id==="stSel"){var o=curOrder();if(o){o.status=+e.target.value;vw.innerHTML=viewDetail(o.id);toast("Status updated")}}});
+  vw.addEventListener("dragover",function(e){if(e.target.closest(".dz"))e.preventDefault()});
+  vw.addEventListener("drop",function(e){if(e.target.closest(".dz")){e.preventDefault();addFiles(e.dataTransfer.files)}});
+  function goOrders(){if(location.hash!=="#orders")location.hash="#orders";route()}
+  vw.addEventListener("click",function(e){var a=e.target.closest("[data-back]");if(a){e.preventDefault();goOrders()}});
+  window.addEventListener("hashchange",route);
+  route();
+})();
+</script>
+
+</body></html>

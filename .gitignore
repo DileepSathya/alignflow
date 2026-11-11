@@ -1,0 +1,10 @@
+.env
+.venv/
+.venv312/
+__pycache__/
+*.pyc
+.dart_tool/
+.flutter-plugins*
+build/
+ios/Pods/
+android/.gradle/
