@@ -174,6 +174,58 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
   }
 }
 
+class RaiseIssueDialog extends StatefulWidget {
+  const RaiseIssueDialog({super.key});
+
+  @override
+  State<RaiseIssueDialog> createState() => _RaiseIssueDialogState();
+}
+
+class _RaiseIssueDialogState extends State<RaiseIssueDialog> {
+  final comment = TextEditingController();
+  List<PlatformFile> files = [];
+  String? error;
+
+  @override
+  void dispose() { comment.dispose(); super.dispose(); }
+
+  Future<void> pickFiles() async {
+    final selection = await FilePicker.pickFiles(
+      type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'stl']);
+    if (mounted && selection.isNotEmpty) setState(() => files = [...files, ...selection]);
+  }
+
+  void submit() {
+    final text = comment.text.trim();
+    if (text.isEmpty) { setState(() => error = 'Describe the issue before submitting.'); return; }
+    Navigator.pop(context, (text: text, files: files));
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Raise issue'),
+    content: SizedBox(width: 520, child: SingleChildScrollView(child: Column(
+      mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        TextField(controller: comment, maxLines: 4,
+          decoration: const InputDecoration(labelText: 'Issue comment *',
+            hintText: 'Describe the clinician feedback for the CAD team')),
+        const SizedBox(height: 16),
+        OutlinedButton.icon(onPressed: pickFiles, icon: const Icon(Icons.attach_file),
+          label: const Text('Attach files (optional)')),
+        const Text('PDF, JPG, PNG, or STL'),
+        for (var i = 0; i < files.length; i++) ListTile(
+          dense: true, title: Text(files[i].name),
+          trailing: IconButton(tooltip: 'Remove file', icon: const Icon(Icons.close),
+            onPressed: () => setState(() => files.removeAt(i)))),
+        if (error != null) Text(error!, style: const TextStyle(color: Colors.red)),
+      ]))),
+    actions: [
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+      FilledButton(onPressed: submit, child: const Text('Raise issue')),
+    ],
+  );
+}
+
 class OrderDetailPage extends StatefulWidget {
   final Api api;
   final String orderId;
@@ -186,12 +238,12 @@ class OrderDetailPage extends StatefulWidget {
 class _OrderDetailPageState extends State<OrderDetailPage> {
   Map<String, dynamic>? order;
   String? error;
-  final comment = TextEditingController(), issue = TextEditingController();
+  final comment = TextEditingController();
   bool busy = false;
   @override
   void initState() { super.initState(); refresh(); }
   @override
-  void dispose() { comment.dispose(); issue.dispose(); super.dispose(); }
+  void dispose() { comment.dispose(); super.dispose(); }
   Future<void> refresh() async {
     try { final result = await widget.api.request('GET', '/api/orders/${widget.orderId}');
       if (mounted) setState(() { order = result['order'] as Map<String, dynamic>; error = null; });
@@ -212,6 +264,34 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
     try { for (final file in selection) { await widget.api.uploadOrderFile(widget.orderId, file); } await refresh(); }
     catch (e) { if (mounted) setState(() => error = e.toString()); }
     finally { if (mounted) setState(() => busy = false); }
+  }
+  Future<void> raiseIssue() async {
+    final details = await showDialog<({String text, List<PlatformFile> files})>(
+      context: context, builder: (_) => const RaiseIssueDialog());
+    if (details == null || !mounted) return;
+    setState(() { busy = true; error = null; });
+    var uploaded = 0;
+    var issueCreated = false;
+    String? submissionError;
+    try {
+      await widget.api.request('POST', '/api/orders/${widget.orderId}/issues',
+        {'text': details.text, 'raised_to': 'cad'});
+      issueCreated = true;
+      for (final file in details.files) {
+        await widget.api.uploadOrderFile(widget.orderId, file);
+        uploaded++;
+      }
+    } catch (e) {
+      submissionError = issueCreated
+        ? 'Issue saved; $uploaded of ${details.files.length} files uploaded. $e'
+        : e.toString();
+    } finally {
+      await refresh();
+      if (mounted) setState(() {
+        busy = false;
+        if (submissionError != null) error = submissionError;
+      });
+    }
   }
   Future<void> downloadFile(Map document) async {
     try {
@@ -305,11 +385,8 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
               trailing: widget.role == 'cad' && data['status'] == 'clinician_issues' && item['resolved_at'] == null
                 ? TextButton(onPressed: busy ? null : () => action('POST',
                     '/api/orders/${widget.orderId}/issues/${item['id']}/resolve'), child: const Text('Resolve')) : null),
-            if (widget.role == 'marketing' && data['status'] == 'plan_completed') TextField(controller: issue, maxLines: 2, decoration: const InputDecoration(hintText: 'Describe the clinician issue for the CAD team')),
-            if (widget.role == 'marketing' && data['status'] == 'plan_completed') Align(alignment: Alignment.centerRight, child: FilledButton(onPressed: busy ? null : () async {
-              if (issue.text.trim().isEmpty) return;
-              await action('POST', '/api/orders/${widget.orderId}/issues', {'text': issue.text.trim(), 'raised_to': 'cad'}); issue.clear();
-            }, child: const Text('Raise issue'))),
+            if (widget.role == 'marketing' && data['status'] == 'plan_completed') Align(alignment: Alignment.centerRight,
+              child: FilledButton(onPressed: busy ? null : raiseIssue, child: const Text('Raise issue'))),
           ])),
           if (widget.role == 'marketing' && ['submitted', 'plan_completed', 'clinician_issues'].contains(data['status']))
             Align(alignment: Alignment.centerLeft, child: TextButton.icon(onPressed: busy ? null : () => action(
