@@ -7,7 +7,7 @@ import 'demo_style.dart';
 
 const _statuses = <String, String>{
   'submitted': 'Submitted by marketing team',
-  'plan_completed': 'Plan completed',
+  'plan_completed': 'Clinical approval pending',
   'clinician_issues': 'Clinician raised issues',
   'clinician_approved': 'Clinician approved',
   'manufactured': 'Manufactured, sent to QC',
@@ -256,10 +256,12 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                 Row(children: [
                   Container(width: 26, height: 26, alignment: Alignment.center,
                     decoration: BoxDecoration(shape: BoxShape.circle,
-                      color: (data['history'] as List).any((step) => step['status'] == _statuses.keys.elementAt(i))
+                      color: (i == 2 && (data['issues'] as List).isEmpty ? false :
+                        (data['history'] as List).any((step) => step['status'] == _statuses.keys.elementAt(i)))
                         ? DemoStyle.accent : DemoStyle.surface2),
                     child: Text('${i + 1}', style: TextStyle(fontSize: 11,
-                      color: (data['history'] as List).any((step) => step['status'] == _statuses.keys.elementAt(i))
+                      color: (i == 2 && (data['issues'] as List).isEmpty ? false :
+                        (data['history'] as List).any((step) => step['status'] == _statuses.keys.elementAt(i)))
                         ? Colors.white : DemoStyle.muted))),
                   Expanded(child: Container(height: 2, color: DemoStyle.line)),
                 ]),
@@ -299,9 +301,12 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
           ])),
           panel('Issues (${(data['issues'] as List).length})', Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             for (final item in data['issues'] as List) ListTile(title: Text(item['text'] as String),
-              subtitle: Text('${item['by']} • ${item['resolved_at'] == null ? 'Open' : 'Resolved'}')),
-            if (widget.role != 'admin') TextField(controller: issue, maxLines: 2, decoration: const InputDecoration(hintText: 'Describe an issue for the CAD team')),
-            if (widget.role != 'admin') Align(alignment: Alignment.centerRight, child: FilledButton(onPressed: busy ? null : () async {
+              subtitle: Text('${item['by']} • ${item['resolved_at'] == null ? 'Open' : 'Resolved'}'),
+              trailing: widget.role == 'cad' && data['status'] == 'clinician_issues' && item['resolved_at'] == null
+                ? TextButton(onPressed: busy ? null : () => action('POST',
+                    '/api/orders/${widget.orderId}/issues/${item['id']}/resolve'), child: const Text('Resolve')) : null),
+            if (widget.role == 'marketing' && data['status'] == 'plan_completed') TextField(controller: issue, maxLines: 2, decoration: const InputDecoration(hintText: 'Describe the clinician issue for the CAD team')),
+            if (widget.role == 'marketing' && data['status'] == 'plan_completed') Align(alignment: Alignment.centerRight, child: FilledButton(onPressed: busy ? null : () async {
               if (issue.text.trim().isEmpty) return;
               await action('POST', '/api/orders/${widget.orderId}/issues', {'text': issue.text.trim(), 'raised_to': 'cad'}); issue.clear();
             }, child: const Text('Raise issue'))),
@@ -313,12 +318,12 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
           if (widget.role == 'cad' && data['status'] == 'submitted')
             FilledButton(onPressed: busy ? null : () => action('POST', '/api/orders/${widget.orderId}/status',
               {'status': 'plan_completed'}), child: const Text('Plan completed')),
-          if (widget.role == 'cad' && data['status'] == 'plan_completed')
-            FilledButton(onPressed: busy ? null : () => action('POST', '/api/orders/${widget.orderId}/status',
-              {'status': 'clinician_issues'}), child: const Text('Clinician raised issues')),
-          if (widget.role == 'cad' && data['status'] == 'clinician_issues')
+          if (widget.role == 'marketing' && data['status'] == 'plan_completed')
             FilledButton(onPressed: busy ? null : () => action('POST', '/api/orders/${widget.orderId}/status',
               {'status': 'clinician_approved'}), child: const Text('Clinician approved')),
+          if (widget.role == 'marketing' && data['status'] == 'clinician_issues' && (data['issues'] as List).isEmpty)
+            OutlinedButton(onPressed: busy ? null : () => action('POST', '/api/orders/${widget.orderId}/status',
+              {'status': 'plan_completed'}), child: const Text('Return to clinical review')),
           if (widget.role == 'lab' && data['status'] == 'clinician_approved')
             FilledButton(onPressed: busy ? null : () => action('POST', '/api/orders/${widget.orderId}/status',
               {'status': 'manufactured'}), child: const Text('Send to QC')),

@@ -302,8 +302,7 @@ class StatusInput(BaseModel):
 
 ORDER_STEPS = ["submitted", "plan_completed", "clinician_issues", "clinician_approved",
                "manufactured", "qc_approved", "manufacture_completed"]
-STATUS_ROLES = {"plan_completed": "cad", "clinician_issues": "cad",
-                "clinician_approved": "cad", "manufactured": "lab",
+STATUS_ROLES = {"plan_completed": "cad", "clinician_approved": "marketing", "manufactured": "lab",
                 "qc_approved": "qc", "manufacture_completed": "lab"}
 
 
@@ -458,11 +457,22 @@ def add_issue(order_id: str, body: IssueInput, user=Depends(current_user)):
     doc = get_order(order_id)
     if doc["status"] == "cancelled":
         raise HTTPException(status_code=409, detail="Order is cancelled")
-    order_store().update_one({"order_id": order_id}, {"$push": {"issues": {
-        "id": str(ObjectId()), "text": body.text.strip(), "at": now(),
-        "by": user["name"], "raised_to": body.raised_to, "resolved_at": None}},
-        "$set": {"updated_at": now()}})
-    return {"order": public_order(get_order(order_id))}
+    if user["role"] != "marketing":
+        raise HTTPException(status_code=403, detail="Marketing team records clinician feedback")
+    if body.raised_to != "cad" or doc["status"] != "plan_completed":
+        raise HTTPException(status_code=409, detail="Clinician feedback requires a completed plan awaiting review")
+    timestamp = now()
+    updated = order_store().find_one_and_update(
+        {"order_id": order_id, "status": "plan_completed"},
+        {"$push": {"issues": {"id": str(ObjectId()), "text": body.text.strip(),
+                              "at": timestamp, "by": user["name"], "raised_to": "cad",
+                              "resolved_at": None},
+                   "history": {"status": "clinician_issues", "at": timestamp, "by": user["name"]}},
+         "$set": {"status": "clinician_issues", "updated_at": timestamp}},
+        return_document=ReturnDocument.AFTER)
+    if updated is None:
+        raise HTTPException(status_code=409, detail="Order changed; reload and try again")
+    return {"order": public_order(updated)}
 
 
 @app.post("/api/orders/{order_id}/issues/{issue_id}/resolve")
@@ -473,9 +483,21 @@ def resolve_issue(order_id: str, issue_id: str, user=Depends(current_user)):
         raise HTTPException(status_code=404, detail="Issue not found")
     if user["role"] != issue["raised_to"] and user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Issue belongs to another team")
-    order_store().update_one({"order_id": order_id, "issues.id": issue_id},
-                              {"$set": {"issues.$.resolved_at": now(), "updated_at": now()}})
-    return {"order": public_order(get_order(order_id))}
+    if doc["status"] != "clinician_issues" or issue["resolved_at"] is not None:
+        raise HTTPException(status_code=409, detail="Issue is not open for resolution")
+    timestamp = now()
+    remaining = [item for item in doc["issues"] if item["id"] != issue_id and item["resolved_at"] is None]
+    update = {"$set": {"issues.$.resolved_at": timestamp, "updated_at": timestamp}}
+    if not remaining:
+        update["$set"]["status"] = "plan_completed"
+        update["$push"] = {"history": {"status": "plan_completed", "at": timestamp, "by": user["name"]}}
+    updated = order_store().find_one_and_update(
+        {"order_id": order_id, "status": "clinician_issues",
+         "issues": {"$elemMatch": {"id": issue_id, "resolved_at": None}}},
+        update, return_document=ReturnDocument.AFTER)
+    if updated is None:
+        raise HTTPException(status_code=409, detail="Order changed; reload and try again")
+    return {"order": public_order(updated)}
 
 
 @app.post("/api/orders/{order_id}/status")
@@ -488,10 +510,19 @@ def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
         if doc["status"] not in ORDER_STEPS[:3]:
             raise HTTPException(status_code=409, detail="Order cannot be cancelled after clinician approval")
     else:
-        if target not in STATUS_ROLES or user["role"] != STATUS_ROLES[target]:
+        legacy_review_reset = (target == "plan_completed" and doc["status"] == "clinician_issues"
+                               and user["role"] == "marketing" and not doc["issues"])
+        if not legacy_review_reset and (target not in STATUS_ROLES or user["role"] != STATUS_ROLES[target]):
             raise HTTPException(status_code=403, detail="Team cannot set this status")
-        if doc["status"] == "cancelled" or ORDER_STEPS.index(target) != ORDER_STEPS.index(doc["status"]) + 1:
+        allowed = (legacy_review_reset or
+                   (doc["status"] == "submitted" and target == "plan_completed") or
+                   (doc["status"] == "plan_completed" and target == "clinician_approved") or
+                   (doc["status"] in ORDER_STEPS[3:] and
+                    ORDER_STEPS.index(target) == ORDER_STEPS.index(doc["status"]) + 1))
+        if not allowed:
             raise HTTPException(status_code=409, detail="Invalid status transition")
+        if target == "clinician_approved" and any(issue["resolved_at"] is None for issue in doc["issues"]):
+            raise HTTPException(status_code=409, detail="Resolve clinician issues before approval")
     timestamp = now()
     updated = order_store().find_one_and_update({"order_id": order_id, "status": doc["status"]},
         {"$set": {"status": target, "updated_at": timestamp}, "$push": {"history": {
