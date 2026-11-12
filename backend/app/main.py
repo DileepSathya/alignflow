@@ -326,9 +326,10 @@ def public_order(doc):
     return result
 
 
-def get_order(order_id: str):
+def get_order(order_id: str, user: dict):
     doc = order_store().find_one({"order_id": order_id})
-    if doc is None:
+    if doc is None or (user["role"] in {"lab", "qc"} and
+                       doc["status"] not in ORDER_STEPS[3:]):
         raise HTTPException(status_code=404, detail="Order not found")
     return doc
 
@@ -416,8 +417,13 @@ def list_orders(q: str = "", status_filter: str = "", page: int = 1, limit: int 
     if page < 1 or not 1 <= limit <= 100:
         raise HTTPException(status_code=400, detail="Invalid page or limit")
     query = {}
+    if user["role"] in {"lab", "qc"}:
+        query["status"] = {"$in": ORDER_STEPS[3:]}
     if status_filter:
-        query["status"] = status_filter
+        if user["role"] in {"lab", "qc"}:
+            query["status"] = {"$in": [status_filter] if status_filter in ORDER_STEPS[3:] else []}
+        else:
+            query["status"] = status_filter
     if q.strip():
         import re
         pattern = re.escape(q.strip()[:100])
@@ -431,30 +437,30 @@ def list_orders(q: str = "", status_filter: str = "", page: int = 1, limit: int 
 
 @app.get("/api/orders/{order_id}")
 def order_detail(order_id: str, user=Depends(current_user)):
-    return {"order": public_order(get_order(order_id))}
+    return {"order": public_order(get_order(order_id, user))}
 
 
 @app.put("/api/orders/{order_id}/patient")
 def edit_patient(order_id: str, body: PatientUpdate, user=Depends(marketing_user)):
-    get_order(order_id)
+    get_order(order_id, user)
     order_store().update_one({"order_id": order_id}, {"$set": {
         "patient_name": body.patient_name.strip(), "age": body.age,
         "notes": body.notes.strip(), "updated_at": now()}})
-    return {"order": public_order(get_order(order_id))}
+    return {"order": public_order(get_order(order_id, user))}
 
 
 @app.post("/api/orders/{order_id}/comments", status_code=201)
 def add_comment(order_id: str, body: CommentInput, user=Depends(current_user)):
-    get_order(order_id)
+    get_order(order_id, user)
     order_store().update_one({"order_id": order_id}, {"$push": {"comments": {
         "id": str(ObjectId()), "text": body.text.strip(), "at": now(),
         "by": user["name"], "role": user["role"]}}, "$set": {"updated_at": now()}})
-    return {"order": public_order(get_order(order_id))}
+    return {"order": public_order(get_order(order_id, user))}
 
 
 @app.post("/api/orders/{order_id}/issues", status_code=201)
 def add_issue(order_id: str, body: IssueInput, user=Depends(current_user)):
-    doc = get_order(order_id)
+    doc = get_order(order_id, user)
     if doc["status"] == "cancelled":
         raise HTTPException(status_code=409, detail="Order is cancelled")
     if user["role"] != "marketing":
@@ -477,7 +483,7 @@ def add_issue(order_id: str, body: IssueInput, user=Depends(current_user)):
 
 @app.post("/api/orders/{order_id}/issues/{issue_id}/resolve")
 def resolve_issue(order_id: str, issue_id: str, user=Depends(current_user)):
-    doc = get_order(order_id)
+    doc = get_order(order_id, user)
     issue = next((item for item in doc["issues"] if item["id"] == issue_id), None)
     if issue is None:
         raise HTTPException(status_code=404, detail="Issue not found")
@@ -502,7 +508,7 @@ def resolve_issue(order_id: str, issue_id: str, user=Depends(current_user)):
 
 @app.post("/api/orders/{order_id}/status")
 def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
-    doc = get_order(order_id)
+    doc = get_order(order_id, user)
     target = body.status
     if target == "cancelled":
         if user["role"] != "marketing":
@@ -535,7 +541,7 @@ def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
 
 @app.post("/api/orders/{order_id}/documents", status_code=201)
 async def upload_order_document(order_id: str, file: UploadFile = File(...), user=Depends(current_user)):
-    doc = get_order(order_id)
+    doc = get_order(order_id, user)
     if doc["status"] == "cancelled":
         raise HTTPException(status_code=409, detail="Order is cancelled")
     allowed = {"application/pdf", "image/jpeg", "image/png", "model/stl", "application/sla", "application/octet-stream"}
@@ -557,12 +563,12 @@ async def upload_order_document(order_id: str, file: UploadFile = File(...), use
     except BaseException:
         storage_path(settings.data_dir / "orders", key).unlink(missing_ok=True)
         raise
-    return {"order": public_order(get_order(order_id))}
+    return {"order": public_order(get_order(order_id, user))}
 
 
 @app.get("/api/orders/{order_id}/documents/{document_id}")
 def download_order_document(order_id: str, document_id: str, user=Depends(current_user)):
-    doc = get_order(order_id)
+    doc = get_order(order_id, user)
     meta = next((item for item in doc["documents"] if item["id"] == document_id), None)
     if meta is None:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -582,7 +588,7 @@ def download_order_document(order_id: str, document_id: str, user=Depends(curren
 
 @app.delete("/api/orders/{order_id}/documents/{document_id}", status_code=204)
 def delete_order_document(order_id: str, document_id: str, user=Depends(current_user)):
-    doc = get_order(order_id)
+    doc = get_order(order_id, user)
     meta = next((item for item in doc["documents"] if item["id"] == document_id), None)
     if meta is None:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -596,3 +602,4 @@ def delete_order_document(order_id: str, document_id: str, user=Depends(current_
         storage_path(settings.data_dir / "orders", key).unlink(missing_ok=True)
     else:
         files.delete(ObjectId(document_id))
+
