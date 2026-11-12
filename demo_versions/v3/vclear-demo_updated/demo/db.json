@@ -1,9 +1,20 @@
 {
   "counters": {
     "order": 4,
-    "clinic": 2
+    "clinic": 3
   },
   "clinics": [
+    {
+      "id": "CLC-003",
+      "addedBy": "marketing_1",
+      "addedByUser": "marketing_1",
+      "city": "Hyderabad",
+      "created": "2026-11-12T06:48:47.741Z",
+      "dentist": "raj",
+      "email": "abc@gmail.com",
+      "name": "abc_clinic",
+      "phone": "1234567890"
+    },
     {
       "id": "CLC-002",
       "addedBy": "marketing_2",

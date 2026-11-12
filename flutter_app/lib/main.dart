@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'api.dart';
 import 'admin_page.dart';
+import 'marketing_page.dart';
 
 void main() => runApp(const AlignFlowApp());
 
@@ -53,6 +54,8 @@ class _AlignFlowAppState extends State<AlignFlowApp> {
             ? LoginPage(api: api, onLogin: (value) => setState(() => user = value))
             : user!['role'] == 'admin'
                 ? AdminPage(api: api, user: user!, onLogout: () => setState(() => user = null))
+                : user!['role'] == 'marketing'
+                ? MarketingPage(api: api, user: user!, onLogout: () => setState(() => user = null))
                 : TeamLanding(user: user!, api: api, onLogout: () => setState(() => user = null)),
   );
 }

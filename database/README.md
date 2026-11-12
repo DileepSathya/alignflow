@@ -9,4 +9,4 @@ Or run these commands from the project root in PowerShell (enter your PostgreSQL
 & 'C:\Program Files\PostgreSQL\17\bin\psql.exe' -h localhost -U postgres -W -d alignflow -f database/setup.sql
 ```
 
-The script creates the `users` and `sessions` tables and seeds `admin` / `admin`. It is safe to rerun if needed. Change the seeded password immediately for any shared environment. The API does not create or migrate tables at startup.
+The script creates the `users`, `sessions`, and `clinics` tables and seeds `admin` / `admin`. It is safe to rerun if needed. Run it again on an existing database to add the clinics table. Change the seeded password immediately for any shared environment. The API does not create or migrate tables at startup.
