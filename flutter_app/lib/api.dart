@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:file_picker/file_picker.dart';
 
 const defaultApiBase = String.fromEnvironment('API_BASE_URL', defaultValue: 'http://localhost:8000');
 const _serverAddressKey = 'server_address';
@@ -90,6 +91,27 @@ class Api {
     on SocketException { throw ApiException('Connection lost. Check the PC and Wi-Fi.'); }
     on http.ClientException { throw ApiException('Connection lost. Check the PC and Wi-Fi.'); }
     on FormatException { throw ApiException('The server sent an invalid response.'); }
+  }
+
+  Future<Map<String, dynamic>> uploadOrderFile(String orderId, PlatformFile file) async {
+    if ((await file.length() ?? 0) > 20 * 1024 * 1024) {
+      throw ApiException('File exceeds 20 MB.');
+    }
+    final bytes = await file.readAsBytes();
+    final request = http.MultipartRequest('POST', Uri.parse('$serverAddress/api/orders/$orderId/documents'));
+    if (token != null) request.headers['Authorization'] = 'Bearer $token';
+    request.files.add(http.MultipartFile.fromBytes('file', bytes, filename: file.name));
+    final response = await request.send();
+    final body = jsonDecode(await response.stream.bytesToString()) as Map<String, dynamic>;
+    if (response.statusCode >= 300) throw ApiException(body['detail']?.toString() ?? 'Upload failed.');
+    return body;
+  }
+
+  Future<List<int>> downloadOrderFile(String orderId, String fileId) async {
+    final response = await http.get(Uri.parse('$serverAddress/api/orders/$orderId/documents/$fileId'),
+        headers: {if (token != null) 'Authorization': 'Bearer $token'});
+    if (response.statusCode >= 300) throw ApiException('Download failed.');
+    return response.bodyBytes;
   }
 
   Future<Map<String, dynamic>> login(String username, String password) async {
