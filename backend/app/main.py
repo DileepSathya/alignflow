@@ -21,7 +21,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()],
     allow_credentials=False,
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
 )
 
@@ -58,6 +58,29 @@ class UserInput(BaseModel):
         return value
 
 
+class ClinicInput(BaseModel):
+    clinic_name: str = Field(min_length=1)
+    dentist_name: str = Field(min_length=1)
+    contact_number: str = Field(min_length=1)
+    email: str | None = None
+    area: str = Field(min_length=1)
+
+    @field_validator("clinic_name", "dentist_name", "contact_number", "area")
+    @classmethod
+    def required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("This field is required")
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def optional_email(cls, value: str | None) -> str | None:
+        value = value.strip() if value else None
+        if value and ("@" not in value or "." not in value.split("@")[-1]):
+            raise ValueError("Enter a valid email address")
+        return value or None
+
 def public_user(user: dict) -> dict:
     return {key: user[key] for key in ("id", "username", "name", "role", "created_at")}
 
@@ -81,6 +104,12 @@ def current_user(authorization: str | None = Header(default=None), conn=Depends(
 def admin_user(user=Depends(current_user)) -> dict:
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
+    return user
+
+
+def marketing_user(user=Depends(current_user)) -> dict:
+    if user["role"] != "marketing":
+        raise HTTPException(status_code=403, detail="Marketing team only")
     return user
 
 
@@ -149,3 +178,43 @@ def delete_user(user_id: int, admin=Depends(admin_user), conn=Depends(connection
         if user["role"] == "admin":
             raise HTTPException(status_code=400, detail="The admin account cannot be deleted")
         cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+
+
+@app.get("/api/clinics")
+def list_clinics(user=Depends(marketing_user), conn=Depends(connection)):
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM clinics ORDER BY clinic_name, id")
+        return {"clinics": cur.fetchall()}
+
+
+@app.post("/api/clinics", status_code=status.HTTP_201_CREATED)
+def create_clinic(body: ClinicInput, user=Depends(marketing_user), conn=Depends(connection)):
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO clinics (clinic_name, dentist_name, contact_number, email, area) "
+            "VALUES (%s, %s, %s, %s, %s) RETURNING *",
+            (body.clinic_name, body.dentist_name, body.contact_number, body.email, body.area),
+        )
+        return {"clinic": cur.fetchone()}
+
+
+@app.put("/api/clinics/{clinic_id}")
+def update_clinic(clinic_id: int, body: ClinicInput, user=Depends(marketing_user), conn=Depends(connection)):
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE clinics SET clinic_name = %s, dentist_name = %s, contact_number = %s, "
+            "email = %s, area = %s, updated_at = NOW() WHERE id = %s RETURNING *",
+            (body.clinic_name, body.dentist_name, body.contact_number, body.email, body.area, clinic_id),
+        )
+        clinic = cur.fetchone()
+    if clinic is None:
+        raise HTTPException(status_code=404, detail="Clinic not found")
+    return {"clinic": clinic}
+
+
+@app.delete("/api/clinics/{clinic_id}", status_code=204)
+def delete_clinic(clinic_id: int, user=Depends(marketing_user), conn=Depends(connection)):
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM clinics WHERE id = %s RETURNING id", (clinic_id,))
+        if cur.fetchone() is None:
+            raise HTTPException(status_code=404, detail="Clinic not found")

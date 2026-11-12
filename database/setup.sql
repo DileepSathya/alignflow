@@ -16,6 +16,17 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_key ON users (lower(username));
 
+CREATE TABLE IF NOT EXISTS clinics (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    clinic_name TEXT NOT NULL,
+    dentist_name TEXT NOT NULL,
+    contact_number TEXT NOT NULL,
+    email TEXT,
+    area TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Change this password before the app is accessible to anyone else.
 INSERT INTO users (username, password, name, role)
 VALUES ('admin', 'admin', 'Admin', 'admin')
