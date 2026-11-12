@@ -1,6 +1,7 @@
 @echo off
 setlocal
 set "ROOT=%~dp0"
+set "PROJECT_ROOT=%ROOT:~0,-1%"
 set "BACKEND=%ROOT%backend"
 set "FLUTTER_APP=%ROOT%flutter_app"
 set "PYTHON=%BACKEND%\.venv312\Scripts\python.exe"
@@ -24,6 +25,13 @@ if errorlevel 1 (
         pause
         exit /b 1
     )
+)
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\start_local_mongo.ps1" -ProjectRoot "%PROJECT_ROOT%"
+if errorlevel 1 (
+    echo MongoDB startup failed. Backend and Flutter were not started.
+    pause
+    exit /b 1
 )
 
 start "AlignFlow Backend" /D "%BACKEND%" cmd /k ""%PYTHON%" -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
