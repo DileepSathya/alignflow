@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'api.dart';
+import 'orders_page.dart';
 
 const _teal = Color(0xFF0B7A75);
 const _ink = Color(0xFF10242B);
@@ -104,7 +105,7 @@ class _MarketingPageState extends State<MarketingPage> {
         if (narrow) AppBar(title: const Text('AlignFlow'), backgroundColor: Colors.white,
           leading: Builder(builder: (ctx) => IconButton(icon: const Icon(Icons.menu), onPressed: () => Scaffold.of(ctx).openDrawer()))),
         Expanded(child: Padding(padding: EdgeInsets.all(narrow ? 16 : 24), child: section == 'Orders'
-          ? const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Orders', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)), SizedBox(height: 24), Center(child: Text('Wait for updates.'))])
+          ? OrdersPage(api: widget.api, clinics: clinics, user: widget.user)
           : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Row(children: [Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const Text('Clinics', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
