@@ -27,6 +27,9 @@ CREATE TABLE IF NOT EXISTS clinics (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE clinics ADD COLUMN IF NOT EXISTS created_by BIGINT REFERENCES users(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS clinics_created_by_idx ON clinics (created_by);
+
 -- Change this password before the app is accessible to anyone else.
 INSERT INTO users (username, password, name, role)
 VALUES ('admin', 'admin', 'Admin', 'admin')

@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import 'api.dart';
-import 'admin_page.dart';
+import 'admin_workspace.dart';
 import 'marketing_page.dart';
+import 'demo_style.dart';
+import 'team_page.dart';
 
 void main() => runApp(const AlignFlowApp());
-
-const ink = Color(0xFF10242B);
-const teal = Color(0xFF0B7A75);
-const bg = Color(0xFFF3F6F7);
 
 class AlignFlowApp extends StatefulWidget {
   const AlignFlowApp({super.key});
@@ -38,25 +36,16 @@ class _AlignFlowAppState extends State<AlignFlowApp> {
   Widget build(BuildContext context) => MaterialApp(
     title: 'AlignFlow',
     debugShowCheckedModeBanner: false,
-    theme: ThemeData(
-      useMaterial3: true,
-      scaffoldBackgroundColor: bg,
-      colorScheme: ColorScheme.fromSeed(seedColor: teal, primary: teal, surface: Colors.white),
-      textTheme: ThemeData.light().textTheme.apply(bodyColor: ink, displayColor: ink),
-      inputDecorationTheme: InputDecorationTheme(
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      ),
-    ),
+    theme: DemoStyle.theme(),
     home: loading
         ? const Scaffold(body: Center(child: CircularProgressIndicator()))
         : user == null
             ? LoginPage(api: api, onLogin: (value) => setState(() => user = value))
             : user!['role'] == 'admin'
-                ? AdminPage(api: api, user: user!, onLogout: () => setState(() => user = null))
+                ? AdminWorkspace(api: api, user: user!, onLogout: () => setState(() => user = null))
                 : user!['role'] == 'marketing'
                 ? MarketingPage(api: api, user: user!, onLogout: () => setState(() => user = null))
-                : TeamLanding(user: user!, api: api, onLogout: () => setState(() => user = null)),
+                : TeamPage(user: user!, api: api, onLogout: () => setState(() => user = null)),
   );
 }
 
@@ -73,6 +62,7 @@ class _LoginPageState extends State<LoginPage> {
   final username = TextEditingController();
   final password = TextEditingController();
   bool busy = false;
+  bool showServer = false;
   String? error;
 
   @override
@@ -95,19 +85,22 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) => Scaffold(
     body: Center(child: SingleChildScrollView(child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 420),
-      child: Card(elevation: 4, child: Padding(
-        padding: const EdgeInsets.all(28),
+      constraints: const BoxConstraints(maxWidth: 400),
+      child: Card(elevation: 0, child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 28),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
-          const Brand(), const SizedBox(height: 26),
-          Text('Log in', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 6),
-          const Text('Sign in with the username and password given by your admin.'),
-          const SizedBox(height: 22),
-          TextField(controller: server, decoration: const InputDecoration(
-            labelText: 'Server IP address', hintText: '192.168.1.25:8000',
-            helperText: 'Enter the PC IP and API port (usually 8000)',
-          ), keyboardType: TextInputType.url, textInputAction: TextInputAction.next),
+          const Brand(), const SizedBox(height: 22),
+          Text('Log in', style: Theme.of(context).textTheme.headlineMedium),
+          const SizedBox(height: 4),
+          const Text('Sign in with the username and password given by your admin.', style: TextStyle(color: DemoStyle.muted)),
+          const SizedBox(height: 20),
+          if (showServer) ...[
+            TextField(controller: server, decoration: const InputDecoration(
+              labelText: 'Server IP address', hintText: '192.168.1.25:8000',
+              helperText: 'Enter the PC IP and API port (usually 8000)',
+            ), keyboardType: TextInputType.url, textInputAction: TextInputAction.next),
+            const SizedBox(height: 14),
+          ],
           const SizedBox(height: 14),
           TextField(controller: username, decoration: const InputDecoration(labelText: 'Username'), textInputAction: TextInputAction.next),
           const SizedBox(height: 14),
@@ -115,6 +108,9 @@ class _LoginPageState extends State<LoginPage> {
           if (error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(error!, style: const TextStyle(color: Colors.red))),
           const SizedBox(height: 18),
           FilledButton(onPressed: busy ? null : submit, child: Text(busy ? 'Signing in...' : 'Log in')),
+          const SizedBox(height: 14),
+          TextButton(onPressed: () => setState(() => showServer = !showServer),
+            child: Text(showServer ? 'Hide server settings' : 'Server settings')),
         ]),
       )),
     ))),
@@ -125,8 +121,8 @@ class Brand extends StatelessWidget {
   const Brand({super.key});
   @override
   Widget build(BuildContext context) => Row(children: [
-    Container(width: 38, height: 38, decoration: BoxDecoration(color: teal, borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.waves, color: Colors.white)),
-    const SizedBox(width: 10), const Text('AlignFlow', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+    const DemoBrandMark(),
+    const SizedBox(width: 10), const Text('AlignFlow', style: TextStyle(fontFamily: 'Bricolage', fontSize: 22, fontWeight: FontWeight.bold)),
   ]);
 }
 

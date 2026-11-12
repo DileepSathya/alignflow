@@ -74,6 +74,16 @@ def connection():
         yield conn
 
 
+@app.on_event("startup")
+def migrate_clinic_attribution():
+    # Existing installations created clinics before the Marketing owner was stored.
+    with psycopg.connect(settings.database_url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS created_by BIGINT "
+                        "REFERENCES users(id) ON DELETE SET NULL")
+            cur.execute("CREATE INDEX IF NOT EXISTS clinics_created_by_idx ON clinics (created_by)")
+
+
 class LoginInput(BaseModel):
     username: str
     password: str
@@ -234,9 +244,9 @@ def list_clinics(user=Depends(marketing_user), conn=Depends(connection)):
 def create_clinic(body: ClinicInput, user=Depends(marketing_user), conn=Depends(connection)):
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO clinics (clinic_name, dentist_name, contact_number, email, area) "
-            "VALUES (%s, %s, %s, %s, %s) RETURNING *",
-            (body.clinic_name, body.dentist_name, body.contact_number, body.email, body.area),
+            "INSERT INTO clinics (clinic_name, dentist_name, contact_number, email, area, created_by) "
+            "VALUES (%s, %s, %s, %s, %s, %s) RETURNING *",
+            (body.clinic_name, body.dentist_name, body.contact_number, body.email, body.area, user["id"]),
         )
         return {"clinic": cur.fetchone()}
 
@@ -357,6 +367,48 @@ def create_order(body: OrderInput, user=Depends(marketing_user), conn=Depends(co
             return {"order": public_order(existing)}
         raise HTTPException(status_code=409, detail="Duplicate order request")
     return {"order": public_order(doc)}
+
+
+@app.get("/api/performance")
+def marketing_performance(year: int, month: int, user=Depends(admin_user), conn=Depends(connection)):
+    if not 2000 <= year <= 2100 or not 1 <= month <= 12:
+        raise HTTPException(status_code=400, detail="Invalid year or month")
+    start = datetime(year, month, 1, tzinfo=timezone.utc)
+    end = datetime(year + (month == 12), month % 12 + 1, 1, tzinfo=timezone.utc)
+    with conn.cursor() as cur:
+        cur.execute("SELECT id, name FROM users WHERE role = 'marketing' ORDER BY name")
+        marketers = cur.fetchall()
+        cur.execute("SELECT created_by, COUNT(*) AS total FROM clinics "
+                    "WHERE created_at >= %s AND created_at < %s GROUP BY created_by", (start, end))
+        clinics_by_user = {row["created_by"]: row["total"] for row in cur.fetchall()}
+    orders_by_user = {}
+    cancelled = 0
+    for order in order_store().find({"created_at": {"$gte": start, "$lt": end}},
+                                    {"created_by": 1, "status": 1}):
+        if order.get("status") == "cancelled":
+            cancelled += 1
+            continue
+        owner = (order.get("created_by") or {}).get("id")
+        orders_by_user[owner] = orders_by_user.get(owner, 0) + 1
+    ranking = [{"id": row["id"], "name": row["name"],
+                "orders": orders_by_user.get(row["id"], 0),
+                "clinics": clinics_by_user.get(row["id"], 0)} for row in marketers]
+    ranking.sort(key=lambda row: (-row["orders"], -row["clinics"], row["name"]))
+    year_start = datetime(year, 1, 1, tzinfo=timezone.utc)
+    year_end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+    months = [{"month": i, "orders": 0, "clinics": 0} for i in range(1, 13)]
+    for order in order_store().find({"created_at": {"$gte": year_start, "$lt": year_end},
+                                     "status": {"$ne": "cancelled"}}, {"created_at": 1}):
+        months[order["created_at"].month - 1]["orders"] += 1
+    with conn.cursor() as cur:
+        cur.execute("SELECT EXTRACT(MONTH FROM created_at)::int AS month, COUNT(*) AS total "
+                    "FROM clinics WHERE created_at >= %s AND created_at < %s "
+                    "GROUP BY 1", (year_start, year_end))
+        for row in cur.fetchall():
+            months[row["month"] - 1]["clinics"] = row["total"]
+    return {"year": year, "month": month, "ranking": ranking, "cancelled": cancelled,
+            "orders": sum(orders_by_user.values()), "clinics": sum(clinics_by_user.values()),
+            "months": months}
 
 
 @app.get("/api/orders")

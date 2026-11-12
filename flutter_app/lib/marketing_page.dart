@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'api.dart';
 import 'orders_page.dart';
+import 'demo_style.dart';
 
 const _teal = Color(0xFF0B7A75);
 const _ink = Color(0xFF10242B);
@@ -20,7 +21,7 @@ class _MarketingPageState extends State<MarketingPage> {
   List<Map<String, dynamic>> clinics = [];
   bool loading = true;
   String? error;
-  String section = 'Clinics';
+  String section = 'Orders';
 
   @override
   void initState() { super.initState(); refresh(); search.addListener(() => setState(() {})); }
@@ -64,18 +65,24 @@ class _MarketingPageState extends State<MarketingPage> {
   }
 
   Widget sidebar({bool compact = false}) => Container(
-    width: compact ? null : 222, color: Colors.white,
+    width: compact ? null : 248, color: Colors.white,
     child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       const Padding(padding: EdgeInsets.all(20), child: Row(children: [
-        CircleAvatar(backgroundColor: _teal, radius: 16, child: Icon(Icons.waves, size: 18, color: Colors.white)),
-        SizedBox(width: 10), Text('AlignFlow', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        DemoBrandMark(size: 34),
+        SizedBox(width: 10), Text('AlignFlow', style: TextStyle(fontFamily: 'Bricolage', fontSize: 19, fontWeight: FontWeight.bold)),
       ])),
-      const SizedBox(height: 14),
+      Padding(padding: const EdgeInsets.symmetric(horizontal: 14), child: DemoPanel(
+        child: Padding(padding: const EdgeInsets.all(12), child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Marketing team', style: TextStyle(fontWeight: FontWeight.w600)),
+            Text(widget.user['name']?.toString() ?? '', style: const TextStyle(fontSize: 12, color: DemoStyle.muted)),
+          ])))),
+      const SizedBox(height: 24),
       navItem('Orders', Icons.receipt_long_outlined),
       navItem('Clinics', Icons.home_work_outlined),
       const Spacer(), const Divider(),
       Padding(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6), child: Container(
-        padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFF3F6F7), borderRadius: BorderRadius.circular(10)),
+        padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: DemoStyle.bg, borderRadius: BorderRadius.circular(10)),
         child: Row(children: [CircleAvatar(radius: 16, backgroundColor: const Color(0xFFD9F1EF), child: Text((widget.user['name'] as String).substring(0, 1).toUpperCase())),
           const SizedBox(width: 10), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(widget.user['username'] as String, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -108,8 +115,8 @@ class _MarketingPageState extends State<MarketingPage> {
           ? OrdersPage(api: widget.api, clinics: clinics, user: widget.user)
           : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Row(children: [Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Clinics', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
-              const Text('Partner clinics you contact over WhatsApp.'),
+              Text('Clinics', style: Theme.of(context).textTheme.headlineLarge),
+              const Text('Partner clinics you contact over WhatsApp.', style: TextStyle(color: DemoStyle.muted)),
             ])), FilledButton.icon(onPressed: () => edit(), icon: const Icon(Icons.add), label: Text(narrow ? 'Add' : 'Add clinic'))]),
             const SizedBox(height: 18),
             TextField(controller: search, decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Search clinic, dentist or area', filled: true, fillColor: Colors.white)),

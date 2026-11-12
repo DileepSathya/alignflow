@@ -12,7 +12,8 @@ class AdminPage extends StatefulWidget {
   final Api api;
   final Map<String, dynamic> user;
   final VoidCallback onLogout;
-  const AdminPage({super.key, required this.api, required this.user, required this.onLogout});
+  final bool embedded;
+  const AdminPage({super.key, required this.api, required this.user, required this.onLogout, this.embedded = false});
   @override
   State<AdminPage> createState() => _AdminPageState();
 }
@@ -52,7 +53,7 @@ class _AdminPageState extends State<AdminPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
+    appBar: widget.embedded ? null : AppBar(
       title: const Text('AlignFlow Admin'), backgroundColor: Colors.white,
       actions: [TextButton.icon(onPressed: () async { await widget.api.logout(); widget.onLogout(); }, icon: const Icon(Icons.logout), label: const Text('Log out'))],
     ),
