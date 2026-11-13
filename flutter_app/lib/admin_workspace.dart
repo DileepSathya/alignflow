@@ -104,7 +104,7 @@ class _AdminOrdersViewState extends State<AdminOrdersView> {
               itemBuilder: (context, i) { final order = orders[i];
                 return ListTile(title: Text(order['patient_name']?.toString() ?? ''),
                   subtitle: Text('${order['order_id']}  •  ${(order['clinic'] as Map?)?['name'] ?? ''}'),
-                  trailing: DemoStatusPill(label: order['status']?.toString().replaceAll('_', ' ') ?? ''),
+                  trailing: DemoStatusPill(label: orderStatusLabel(order['status'])),
                   onTap: () async { await Navigator.push(context, MaterialPageRoute(builder: (_) =>
                     OrderDetailPage(api: widget.api, orderId: order['order_id'] as String, role: 'admin')));
                     refresh(); });

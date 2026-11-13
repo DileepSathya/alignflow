@@ -78,6 +78,15 @@ class QcIssueTests(unittest.TestCase):
             self.raise_qc_issue()
         self.assertEqual(caught.exception.status_code, 409)
 
+    def test_qc_approval_is_final(self):
+        main.change_status("ORD-000001", main.StatusInput(status="qc_approved"),
+                           user={"role": "qc", "name": "Reviewer"})
+        with self.assertRaises(HTTPException) as caught:
+            main.change_status("ORD-000001", main.StatusInput(status="manufacture_completed"),
+                               user={"role": "lab", "name": "Maker"})
+        self.assertEqual(caught.exception.status_code, 403)
+        self.assertEqual(self.order["status"], "qc_approved")
+
     def test_lab_cannot_raise_and_marketing_flow_still_works(self):
         with self.assertRaises(HTTPException) as caught:
             main.add_issue("ORD-000001", main.IssueInput(text="Problem", raised_to="lab"),

@@ -90,8 +90,8 @@ class _TeamPageState extends State<TeamPage> {
                 DropdownMenuItem(value: 'submitted', child: Text('Submitted')),
                 DropdownMenuItem(value: 'plan_completed', child: Text('Plan completed')),
                 DropdownMenuItem(value: 'clinician_approved', child: Text('Clinician approved')),
-                DropdownMenuItem(value: 'manufactured', child: Text('Sent to QC')),
-                DropdownMenuItem(value: 'qc_issues', child: Text('QC raised issues')),
+                DropdownMenuItem(value: 'manufactured', child: Text('QC approval pending')),
+                DropdownMenuItem(value: 'qc_issues', child: Text('QC raised issue')),
                 DropdownMenuItem(value: 'qc_approved', child: Text('QC approved'))],
               onChanged: (value) { filter = value ?? ''; refresh(); })),
           ]),
@@ -107,7 +107,7 @@ class _TeamPageState extends State<TeamPage> {
                   title: Text(order['patient_name']?.toString() ?? '',
                     style: const TextStyle(fontWeight: FontWeight.w600)),
                   subtitle: Text('${order['order_id']}  •  ${(order['clinic'] as Map?)?['name'] ?? ''}'),
-                  trailing: DemoStatusPill(label: order['status']?.toString().replaceAll('_', ' ') ?? ''));
+                  trailing: DemoStatusPill(label: orderStatusLabel(order['status'])));
               }))),
         ]))));
     return Scaffold(
