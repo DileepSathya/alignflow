@@ -472,12 +472,25 @@ def list_orders(q: str = "", status_filter: str = "", status_group: str = "",
             "qc_issue_raised": ["qc_issues"],
             "manufacturing_completed": ["qc_approved", "manufacture_completed"],
         }
-        groups = cad_groups if user["role"] == "cad" else lab_groups if user["role"] == "lab" else {}
+        qc_groups = {
+            "qc_approval_pending": ["manufactured"],
+            "issue_raised": ["qc_issues"],
+            "issue_resolved": ["manufactured"],
+            "approval_completed": ["qc_approved", "manufacture_completed"],
+        }
+        groups = (cad_groups if user["role"] == "cad" else
+                  lab_groups if user["role"] == "lab" else
+                  qc_groups if user["role"] == "qc" else {})
         if status_group not in groups:
             raise HTTPException(status_code=400, detail="Invalid status group")
         query["status"] = {"$in": groups[status_group]}
+        resolved_issue = {"raised_to": "lab", "resolved_at": {"$ne": None}}
+        if user["role"] == "qc" and status_group == "issue_resolved":
+            query["issues"] = {"$elemMatch": resolved_issue}
+        elif user["role"] == "qc" and status_group == "qc_approval_pending":
+            query["issues"] = {"$not": {"$elemMatch": resolved_issue}}
     if clinic_id is not None:
-        if user["role"] not in {"cad", "lab"}:
+        if user["role"] not in {"cad", "lab", "qc"}:
             raise HTTPException(status_code=403, detail="Team cannot filter clinics")
         query["clinic_id"] = clinic_id
     if status_filter:
@@ -547,6 +560,33 @@ def lab_overview(user=Depends(current_user)):
             "qc_issue_raised": statuses.get("qc_issues", 0),
             "manufacturing_completed": statuses.get("qc_approved", 0) +
                                        statuses.get("manufacture_completed", 0),
+            "clinics": clinics}
+
+
+@app.get("/api/qc/overview")
+def qc_overview(user=Depends(current_user)):
+    if user["role"] != "qc":
+        raise HTTPException(status_code=403, detail="QC team only")
+    collection = order_store()
+    statuses = {row["_id"]: row["count"] for row in collection.aggregate([
+        {"$match": {"status": {"$in": QC_VISIBLE_STEPS}}},
+        {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+    ])}
+    resolved = collection.count_documents({"status": "manufactured", "issues": {
+        "$elemMatch": {"raised_to": "lab", "resolved_at": {"$ne": None}}}})
+    clinics = [{"id": row["_id"], "name": row["name"]}
+               for row in collection.aggregate([
+                   {"$match": {"status": {"$in": QC_VISIBLE_STEPS},
+                               "clinic_id": {"$ne": None}}},
+                   {"$group": {"_id": "$clinic_id", "name": {"$first": "$clinic.name"}}},
+                   {"$sort": {"name": 1}},
+               ])]
+    return {"all_orders": sum(statuses.values()),
+            "qc_approval_pending": statuses.get("manufactured", 0) - resolved,
+            "issue_raised": statuses.get("qc_issues", 0),
+            "issue_resolved": resolved,
+            "approval_completed": statuses.get("qc_approved", 0) +
+                                  statuses.get("manufacture_completed", 0),
             "clinics": clinics}
 
 
