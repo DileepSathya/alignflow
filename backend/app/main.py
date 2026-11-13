@@ -332,9 +332,10 @@ class StatusInput(BaseModel):
 
 
 ORDER_STEPS = ["submitted", "plan_completed", "clinician_issues", "clinician_approved",
-               "manufactured", "qc_issues", "qc_approved", "manufacture_completed"]
+               "manufactured", "qc_issues", "qc_approved"]
 STATUS_ROLES = {"plan_completed": "cad", "clinician_approved": "marketing", "manufactured": "lab",
-                "qc_approved": "qc", "manufacture_completed": "lab"}
+                "qc_approved": "qc"}
+VISIBLE_PRODUCTION_STEPS = ORDER_STEPS[3:] + ["manufacture_completed"]  # Legacy completed orders.
 
 
 def now():
@@ -360,7 +361,7 @@ def public_order(doc):
 def get_order(order_id: str, user: dict):
     doc = order_store().find_one({"order_id": order_id})
     if doc is None or (user["role"] in {"lab", "qc"} and
-                       doc["status"] not in ORDER_STEPS[3:]):
+                       doc["status"] not in VISIBLE_PRODUCTION_STEPS):
         raise HTTPException(status_code=404, detail="Order not found")
     return doc
 
@@ -449,12 +450,13 @@ def list_orders(q: str = "", status_filter: str = "", page: int = 1, limit: int 
         raise HTTPException(status_code=400, detail="Invalid page or limit")
     query = {}
     if user["role"] in {"lab", "qc"}:
-        query["status"] = {"$in": ORDER_STEPS[3:]}
+        query["status"] = {"$in": VISIBLE_PRODUCTION_STEPS}
     if status_filter:
         if user["role"] in {"lab", "qc"}:
-            query["status"] = {"$in": [status_filter] if status_filter in ORDER_STEPS[3:] else []}
+            matching = ["qc_approved", "manufacture_completed"] if status_filter == "qc_approved" else [status_filter]
+            query["status"] = {"$in": matching if status_filter in VISIBLE_PRODUCTION_STEPS else []}
         else:
-            query["status"] = status_filter
+            query["status"] = {"$in": ["qc_approved", "manufacture_completed"]} if status_filter == "qc_approved" else status_filter
     if q.strip():
         import re
         pattern = re.escape(q.strip()[:100])
@@ -564,7 +566,6 @@ def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
                    (doc["status"], target) in {
                        ("clinician_approved", "manufactured"),
                        ("manufactured", "qc_approved"),
-                       ("qc_approved", "manufacture_completed"),
                    })
         if not allowed:
             raise HTTPException(status_code=409, detail="Invalid status transition")

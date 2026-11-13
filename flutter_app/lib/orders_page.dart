@@ -10,12 +10,25 @@ const _statuses = <String, String>{
   'plan_completed': 'Clinical approval pending',
   'clinician_issues': 'Clinician raised issues',
   'clinician_approved': 'Clinician approved',
-  'manufactured': 'Manufactured, sent to QC',
-  'qc_issues': 'QC raised issues',
+  'manufactured': 'QC approval pending',
+  'qc_issues': 'QC raised issue',
   'qc_approved': 'QC approved',
-  'manufacture_completed': 'Manufacture completed',
+  'manufacture_completed': 'QC approved', // Legacy completed orders.
   'cancelled': 'Cancelled',
 };
+
+String orderStatusLabel(Object? status) => _statuses[status] ?? status?.toString() ?? '';
+
+const _progressSteps = <(String, String)>[
+  ('submitted', 'Submitted by marketing team'),
+  ('plan_completed', 'Clinical approval pending'),
+  ('clinician_issues', 'Clinician raised issues'),
+  ('clinician_approved', 'Clinician approved'),
+  ('manufactured', 'Manufactured'),
+  ('manufactured', 'QC approval pending'),
+  ('qc_issues', 'QC raised issue'),
+  ('qc_approved', 'QC approved'),
+];
 
 class OrdersPage extends StatefulWidget {
   final Api api;
@@ -83,7 +96,8 @@ class _OrdersPageState extends State<OrdersPage> {
         SizedBox(width: narrow ? double.infinity : 280, child: DropdownButtonFormField<String>(
           initialValue: filter, isExpanded: true, decoration: const InputDecoration(labelText: 'Status'),
           items: [const DropdownMenuItem(value: '', child: Text('All statuses')),
-            ..._statuses.entries.map((entry) => DropdownMenuItem(value: entry.key, child: Text(entry.value, overflow: TextOverflow.ellipsis)))],
+            ..._statuses.entries.where((entry) => entry.key != 'manufacture_completed').map((entry) =>
+              DropdownMenuItem(value: entry.key, child: Text(entry.value, overflow: TextOverflow.ellipsis)))],
           onChanged: (value) { filter = value ?? ''; refresh(newPage: 1); })),
       ]),
       const SizedBox(height: 16),
@@ -336,23 +350,27 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
           if (error != null) Text(error!, style: const TextStyle(color: Colors.red)),
           const SizedBox(height: 12),
           panel('Progress', SizedBox(height: 80, child: ListView(scrollDirection: Axis.horizontal, children: [
-            for (var i = 0; i < _statuses.length - 1; i++) SizedBox(width: 145, child: Column(
+            for (var i = 0; i < _progressSteps.length; i++) SizedBox(width: 145, child: Column(
               crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Builder(builder: (context) {
+                  final step = _progressSteps[i];
+                  final history = data['history'] as List;
+                  final reached = step.$1 == 'qc_approved' && data['status'] == 'manufacture_completed' ||
+                    history.any((entry) => entry['status'] == step.$1);
+                  return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
                   Container(width: 26, height: 26, alignment: Alignment.center,
                     decoration: BoxDecoration(shape: BoxShape.circle,
-                      color: (i == 2 && (data['issues'] as List).isEmpty ? false :
-                        (data['history'] as List).any((step) => step['status'] == _statuses.keys.elementAt(i)))
-                        ? DemoStyle.accent : DemoStyle.surface2),
+                      color: reached ? DemoStyle.accent : DemoStyle.surface2),
                     child: Text('${i + 1}', style: TextStyle(fontSize: 11,
-                      color: (i == 2 && (data['issues'] as List).isEmpty ? false :
-                        (data['history'] as List).any((step) => step['status'] == _statuses.keys.elementAt(i)))
-                        ? Colors.white : DemoStyle.muted))),
+                      color: reached ? Colors.white : DemoStyle.muted))),
                   Expanded(child: Container(height: 2, color: DemoStyle.line)),
                 ]),
                 const SizedBox(height: 8),
-                Text(_statuses.values.elementAt(i), style: const TextStyle(fontSize: 11,
+                Text(step.$2, style: const TextStyle(fontSize: 11,
                   color: DemoStyle.muted), maxLines: 2),
+              ]);
+                }),
               ])),
           ]))),
           panel('Patient', Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -410,13 +428,10 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
               {'status': 'plan_completed'}), child: const Text('Return to clinical review')),
           if (widget.role == 'lab' && data['status'] == 'clinician_approved')
             FilledButton(onPressed: busy ? null : () => action('POST', '/api/orders/${widget.orderId}/status',
-              {'status': 'manufactured'}), child: const Text('Send to QC')),
+              {'status': 'manufactured'}), child: const Text('Manufacture done')),
           if (widget.role == 'qc' && data['status'] == 'manufactured')
             FilledButton(onPressed: busy ? null : () => action('POST', '/api/orders/${widget.orderId}/status',
               {'status': 'qc_approved'}), child: const Text('QC approved')),
-          if (widget.role == 'lab' && data['status'] == 'qc_approved')
-            FilledButton(onPressed: busy ? null : () => action('POST', '/api/orders/${widget.orderId}/status',
-              {'status': 'manufacture_completed'}), child: const Text('Manufacture completed')),
         ]));
   }
 }
