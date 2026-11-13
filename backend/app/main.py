@@ -444,14 +444,35 @@ def marketing_performance(year: int, month: int, user=Depends(admin_user), conn=
 
 
 @app.get("/api/orders")
-def list_orders(q: str = "", status_filter: str = "", page: int = 1, limit: int = 25,
+def list_orders(q: str = "", status_filter: str = "", status_group: str = "",
+                clinic_id: int | None = None, page: int = 1, limit: int = 25,
                 user=Depends(current_user)):
     if page < 1 or not 1 <= limit <= 100:
         raise HTTPException(status_code=400, detail="Invalid page or limit")
     query = {}
     if user["role"] in {"lab", "qc"}:
         query["status"] = {"$in": VISIBLE_PRODUCTION_STEPS}
+    if status_group:
+        if user["role"] != "cad":
+            raise HTTPException(status_code=403, detail="Clinical CAD team only")
+        groups = {
+            "plan_pending": ["submitted"],
+            "clinical_approval_pending": ["plan_completed"],
+            "issue_raised": ["clinician_issues"],
+            "approved": ["clinician_approved", "manufactured", "qc_issues",
+                         "qc_approved", "manufacture_completed"],
+            "cancelled": ["cancelled"],
+        }
+        if status_group not in groups:
+            raise HTTPException(status_code=400, detail="Invalid status group")
+        query["status"] = {"$in": groups[status_group]}
+    if clinic_id is not None:
+        if user["role"] != "cad":
+            raise HTTPException(status_code=403, detail="Clinical CAD team only")
+        query["clinic_id"] = clinic_id
     if status_filter:
+        if status_group:
+            raise HTTPException(status_code=400, detail="Choose one status filter")
         if user["role"] in {"lab", "qc"}:
             matching = ["qc_approved", "manufacture_completed"] if status_filter == "qc_approved" else [status_filter]
             query["status"] = {"$in": matching if status_filter in VISIBLE_PRODUCTION_STEPS else []}
@@ -466,6 +487,30 @@ def list_orders(q: str = "", status_filter: str = "", page: int = 1, limit: int 
     total = collection.count_documents(query)
     rows = collection.find(query).sort("created_at", DESCENDING).skip((page - 1) * limit).limit(limit)
     return {"orders": [public_order(row) for row in rows], "total": total, "page": page}
+
+
+@app.get("/api/cad/overview")
+def cad_overview(user=Depends(current_user)):
+    if user["role"] != "cad":
+        raise HTTPException(status_code=403, detail="Clinical CAD team only")
+    collection = order_store()
+    statuses = {row["_id"]: row["count"] for row in collection.aggregate([
+        {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+    ])}
+    clinics = [{"id": row["_id"], "name": row["name"]}
+               for row in collection.aggregate([
+                   {"$match": {"clinic_id": {"$ne": None}}},
+                   {"$group": {"_id": "$clinic_id", "name": {"$first": "$clinic.name"}}},
+                   {"$sort": {"name": 1}},
+               ])]
+    return {"all_orders": sum(statuses.values()),
+            "plan_pending": statuses.get("submitted", 0),
+            "clinical_approval_pending": statuses.get("plan_completed", 0),
+            "issue_raised": statuses.get("clinician_issues", 0),
+            "approved": sum(statuses.get(key, 0) for key in
+                            ("clinician_approved", "manufactured", "qc_issues",
+                             "qc_approved", "manufacture_completed")),
+            "cancelled": statuses.get("cancelled", 0), "clinics": clinics}
 
 
 @app.get("/api/admin/overview")
