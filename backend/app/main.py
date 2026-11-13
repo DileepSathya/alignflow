@@ -461,11 +461,34 @@ def list_orders(q: str = "", status_filter: str = "", page: int = 1, limit: int 
         import re
         pattern = re.escape(q.strip()[:100])
         query["$or"] = [{field: {"$regex": pattern, "$options": "i"}}
-                        for field in ("order_id", "patient_name", "clinic.name")]
+                        for field in ("order_id", "patient_name", "clinic.name", "clinic.dentist")]
     collection = order_store()
     total = collection.count_documents(query)
     rows = collection.find(query).sort("created_at", DESCENDING).skip((page - 1) * limit).limit(limit)
     return {"orders": [public_order(row) for row in rows], "total": total, "page": page}
+
+
+@app.get("/api/admin/overview")
+def admin_overview(admin=Depends(admin_user), conn=Depends(connection)):
+    rows = list(order_store().aggregate([
+        {"$project": {"status": 1, "open_issues": {"$size": {"$filter": {
+            "input": {"$ifNull": ["$issues", []]}, "as": "issue",
+            "cond": {"$eq": ["$$issue.resolved_at", None]}}}}}},
+        {"$group": {"_id": "$status", "count": {"$sum": 1},
+                    "open_issues": {"$sum": "$open_issues"}}},
+    ]))
+    statuses = {row["_id"]: row["count"] for row in rows}
+    open_issues = sum(row["open_issues"] for row in rows)
+    with conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) AS count FROM users")
+        users = cur.fetchone()["count"]
+    return {"total_orders": sum(statuses.values()), "users": users,
+            "in_plan": sum(statuses.get(key, 0) for key in
+                           ("submitted", "plan_completed", "clinician_issues")),
+            "in_manufacturing": statuses.get("clinician_approved", 0),
+            "in_qc": statuses.get("manufactured", 0) + statuses.get("qc_issues", 0),
+            "completed": statuses.get("qc_approved", 0) + statuses.get("manufacture_completed", 0),
+            "cancelled": statuses.get("cancelled", 0), "open_issues": open_issues}
 
 
 @app.get("/api/orders/{order_id}")
