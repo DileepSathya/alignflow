@@ -10,6 +10,7 @@ const _statuses = <String, String>{
   'plan_completed': 'Clinical approval pending',
   'clinician_issues': 'Clinician raised issues',
   'clinician_approved': 'Clinician approved',
+  'manufacturing_in_process': 'Manufacturing in process',
   'manufactured': 'QC approval pending',
   'qc_issues': 'QC raised issue',
   'qc_approved': 'QC approved',
@@ -25,6 +26,7 @@ const _progressSteps = <(String, String)>[
   ('plan_completed', 'Clinical approval pending'),
   ('clinician_issues', 'Clinician raised issues'),
   ('clinician_approved', 'Clinician approved'),
+  ('manufacturing_in_process', 'Manufacturing in process'),
   ('manufactured', 'Manufactured'),
   ('manufactured', 'QC approval pending'),
   ('qc_issues', 'QC raised issue'),
@@ -1047,8 +1049,18 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                           : () => action(
                               'POST',
                               '/api/orders/${widget.orderId}/status',
+                              {'status': 'manufacturing_in_process'}),
+                      child: const Text('Start manufacturing')),
+                if (widget.role == 'lab' &&
+                    data['status'] == 'manufacturing_in_process')
+                  FilledButton(
+                      onPressed: busy
+                          ? null
+                          : () => action(
+                              'POST',
+                              '/api/orders/${widget.orderId}/status',
                               {'status': 'manufactured'}),
-                      child: const Text('Manufacture done')),
+                      child: const Text('Send to QC')),
                 if (widget.role == 'qc' && data['status'] == 'manufactured')
                   FilledButton(
                       onPressed: busy

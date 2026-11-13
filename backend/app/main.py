@@ -332,10 +332,12 @@ class StatusInput(BaseModel):
 
 
 ORDER_STEPS = ["submitted", "plan_completed", "clinician_issues", "clinician_approved",
-               "manufactured", "qc_issues", "qc_approved"]
-STATUS_ROLES = {"plan_completed": "cad", "clinician_approved": "marketing", "manufactured": "lab",
+               "manufacturing_in_process", "manufactured", "qc_issues", "qc_approved"]
+STATUS_ROLES = {"plan_completed": "cad", "clinician_approved": "marketing",
+                "manufacturing_in_process": "lab", "manufactured": "lab",
                 "qc_approved": "qc"}
 VISIBLE_PRODUCTION_STEPS = ORDER_STEPS[3:] + ["manufacture_completed"]  # Legacy completed orders.
+QC_VISIBLE_STEPS = ["manufactured", "qc_issues", "qc_approved", "manufacture_completed"]
 
 
 def now():
@@ -360,8 +362,9 @@ def public_order(doc):
 
 def get_order(order_id: str, user: dict):
     doc = order_store().find_one({"order_id": order_id})
+    visible = QC_VISIBLE_STEPS if user["role"] == "qc" else VISIBLE_PRODUCTION_STEPS
     if doc is None or (user["role"] in {"lab", "qc"} and
-                       doc["status"] not in VISIBLE_PRODUCTION_STEPS):
+                       doc["status"] not in visible):
         raise HTTPException(status_code=404, detail="Order not found")
     return doc
 
@@ -451,31 +454,39 @@ def list_orders(q: str = "", status_filter: str = "", status_group: str = "",
         raise HTTPException(status_code=400, detail="Invalid page or limit")
     query = {}
     if user["role"] in {"lab", "qc"}:
-        query["status"] = {"$in": VISIBLE_PRODUCTION_STEPS}
+        query["status"] = {"$in": QC_VISIBLE_STEPS if user["role"] == "qc"
+                           else VISIBLE_PRODUCTION_STEPS}
     if status_group:
-        if user["role"] != "cad":
-            raise HTTPException(status_code=403, detail="Clinical CAD team only")
-        groups = {
+        cad_groups = {
             "plan_pending": ["submitted"],
             "clinical_approval_pending": ["plan_completed"],
             "issue_raised": ["clinician_issues"],
-            "approved": ["clinician_approved", "manufactured", "qc_issues",
+            "approved": ["clinician_approved", "manufacturing_in_process", "manufactured", "qc_issues",
                          "qc_approved", "manufacture_completed"],
             "cancelled": ["cancelled"],
         }
+        lab_groups = {
+            "manufacturing_not_started": ["clinician_approved"],
+            "manufacturing_in_process": ["manufacturing_in_process"],
+            "qc_approval_pending": ["manufactured"],
+            "qc_issue_raised": ["qc_issues"],
+            "manufacturing_completed": ["qc_approved", "manufacture_completed"],
+        }
+        groups = cad_groups if user["role"] == "cad" else lab_groups if user["role"] == "lab" else {}
         if status_group not in groups:
             raise HTTPException(status_code=400, detail="Invalid status group")
         query["status"] = {"$in": groups[status_group]}
     if clinic_id is not None:
-        if user["role"] != "cad":
-            raise HTTPException(status_code=403, detail="Clinical CAD team only")
+        if user["role"] not in {"cad", "lab"}:
+            raise HTTPException(status_code=403, detail="Team cannot filter clinics")
         query["clinic_id"] = clinic_id
     if status_filter:
         if status_group:
             raise HTTPException(status_code=400, detail="Choose one status filter")
         if user["role"] in {"lab", "qc"}:
             matching = ["qc_approved", "manufacture_completed"] if status_filter == "qc_approved" else [status_filter]
-            query["status"] = {"$in": matching if status_filter in VISIBLE_PRODUCTION_STEPS else []}
+            visible = QC_VISIBLE_STEPS if user["role"] == "qc" else VISIBLE_PRODUCTION_STEPS
+            query["status"] = {"$in": matching if status_filter in visible else []}
         else:
             query["status"] = {"$in": ["qc_approved", "manufacture_completed"]} if status_filter == "qc_approved" else status_filter
     if q.strip():
@@ -508,9 +519,35 @@ def cad_overview(user=Depends(current_user)):
             "clinical_approval_pending": statuses.get("plan_completed", 0),
             "issue_raised": statuses.get("clinician_issues", 0),
             "approved": sum(statuses.get(key, 0) for key in
-                            ("clinician_approved", "manufactured", "qc_issues",
+                            ("clinician_approved", "manufacturing_in_process", "manufactured", "qc_issues",
                              "qc_approved", "manufacture_completed")),
             "cancelled": statuses.get("cancelled", 0), "clinics": clinics}
+
+
+@app.get("/api/lab/overview")
+def lab_overview(user=Depends(current_user)):
+    if user["role"] != "lab":
+        raise HTTPException(status_code=403, detail="Lab / Manufacturing team only")
+    collection = order_store()
+    statuses = {row["_id"]: row["count"] for row in collection.aggregate([
+        {"$match": {"status": {"$in": VISIBLE_PRODUCTION_STEPS}}},
+        {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+    ])}
+    clinics = [{"id": row["_id"], "name": row["name"]}
+               for row in collection.aggregate([
+                   {"$match": {"status": {"$in": VISIBLE_PRODUCTION_STEPS},
+                               "clinic_id": {"$ne": None}}},
+                   {"$group": {"_id": "$clinic_id", "name": {"$first": "$clinic.name"}}},
+                   {"$sort": {"name": 1}},
+               ])]
+    return {"all_orders": sum(statuses.values()),
+            "manufacturing_not_started": statuses.get("clinician_approved", 0),
+            "manufacturing_in_process": statuses.get("manufacturing_in_process", 0),
+            "qc_approval_pending": statuses.get("manufactured", 0),
+            "qc_issue_raised": statuses.get("qc_issues", 0),
+            "manufacturing_completed": statuses.get("qc_approved", 0) +
+                                       statuses.get("manufacture_completed", 0),
+            "clinics": clinics}
 
 
 @app.get("/api/admin/overview")
@@ -530,7 +567,8 @@ def admin_overview(admin=Depends(admin_user), conn=Depends(connection)):
     return {"total_orders": sum(statuses.values()), "users": users,
             "in_plan": sum(statuses.get(key, 0) for key in
                            ("submitted", "plan_completed", "clinician_issues")),
-            "in_manufacturing": statuses.get("clinician_approved", 0),
+            "in_manufacturing": statuses.get("clinician_approved", 0) +
+                                statuses.get("manufacturing_in_process", 0),
             "in_qc": statuses.get("manufactured", 0) + statuses.get("qc_issues", 0),
             "completed": statuses.get("qc_approved", 0) + statuses.get("manufacture_completed", 0),
             "cancelled": statuses.get("cancelled", 0), "open_issues": open_issues}
@@ -632,7 +670,8 @@ def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
                    (doc["status"] == "submitted" and target == "plan_completed") or
                    (doc["status"] == "plan_completed" and target == "clinician_approved") or
                    (doc["status"], target) in {
-                       ("clinician_approved", "manufactured"),
+                       ("clinician_approved", "manufacturing_in_process"),
+                       ("manufacturing_in_process", "manufactured"),
                        ("manufactured", "qc_approved"),
                    })
         if not allowed:

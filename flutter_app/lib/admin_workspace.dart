@@ -329,6 +329,9 @@ class _AdminOrdersViewState extends State<AdminOrdersView> {
                                     value: 'manufactured',
                                     child: Text('Manufactured')),
                                 DropdownMenuItem(
+                                    value: 'manufacturing_in_process',
+                                    child: Text('Manufacturing in process')),
+                                DropdownMenuItem(
                                     value: 'qc_issues',
                                     child: Text('QC issues')),
                                 DropdownMenuItem(
@@ -569,6 +572,7 @@ class _AdminOrderRow extends StatelessWidget {
       _reached(order, 'clinician_approved') ||
       {
         'clinician_approved',
+        'manufacturing_in_process',
         'manufactured',
         'qc_issues',
         'qc_approved',
@@ -585,7 +589,7 @@ class _AdminOrderRow extends StatelessWidget {
       _reached(order, 'manufactured') ||
               {'qc_approved', 'manufacture_completed'}.contains(order['status'])
           ? 'Completed'
-          : order['status'] == 'clinician_approved'
+          : {'clinician_approved', 'manufacturing_in_process'}.contains(order['status'])
               ? 'Pending'
               : 'Not started';
   static String _manufacturingTone(Map<String, dynamic> order) =>
