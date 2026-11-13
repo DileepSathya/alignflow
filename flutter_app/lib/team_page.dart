@@ -91,6 +91,7 @@ class _TeamPageState extends State<TeamPage> {
                 DropdownMenuItem(value: 'plan_completed', child: Text('Plan completed')),
                 DropdownMenuItem(value: 'clinician_approved', child: Text('Clinician approved')),
                 DropdownMenuItem(value: 'manufactured', child: Text('Sent to QC')),
+                DropdownMenuItem(value: 'qc_issues', child: Text('QC raised issues')),
                 DropdownMenuItem(value: 'qc_approved', child: Text('QC approved'))],
               onChanged: (value) { filter = value ?? ''; refresh(); })),
           ]),

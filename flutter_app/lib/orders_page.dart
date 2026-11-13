@@ -11,6 +11,7 @@ const _statuses = <String, String>{
   'clinician_issues': 'Clinician raised issues',
   'clinician_approved': 'Clinician approved',
   'manufactured': 'Manufactured, sent to QC',
+  'qc_issues': 'QC raised issues',
   'qc_approved': 'QC approved',
   'manufacture_completed': 'Manufacture completed',
   'cancelled': 'Cancelled',
@@ -175,7 +176,8 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
 }
 
 class RaiseIssueDialog extends StatefulWidget {
-  const RaiseIssueDialog({super.key});
+  final String targetTeam;
+  const RaiseIssueDialog({super.key, required this.targetTeam});
 
   @override
   State<RaiseIssueDialog> createState() => _RaiseIssueDialogState();
@@ -207,8 +209,8 @@ class _RaiseIssueDialogState extends State<RaiseIssueDialog> {
     content: SizedBox(width: 520, child: SingleChildScrollView(child: Column(
       mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         TextField(controller: comment, maxLines: 4,
-          decoration: const InputDecoration(labelText: 'Issue comment *',
-            hintText: 'Describe the clinician feedback for the CAD team')),
+          decoration: InputDecoration(labelText: 'Issue comment *',
+            hintText: 'Describe the issue for the ${widget.targetTeam} team')),
         const SizedBox(height: 16),
         OutlinedButton.icon(onPressed: pickFiles, icon: const Icon(Icons.attach_file),
           label: const Text('Attach files (optional)')),
@@ -266,8 +268,9 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
     finally { if (mounted) setState(() => busy = false); }
   }
   Future<void> raiseIssue() async {
+    final isQc = widget.role == 'qc';
     final details = await showDialog<({String text, List<PlatformFile> files})>(
-      context: context, builder: (_) => const RaiseIssueDialog());
+      context: context, builder: (_) => RaiseIssueDialog(targetTeam: isQc ? 'Lab / Manufacturing' : 'CAD'));
     if (details == null || !mounted) return;
     setState(() { busy = true; error = null; });
     var uploaded = 0;
@@ -275,7 +278,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
     String? submissionError;
     try {
       await widget.api.request('POST', '/api/orders/${widget.orderId}/issues',
-        {'text': details.text, 'raised_to': 'cad'});
+        {'text': details.text, 'raised_to': isQc ? 'lab' : 'cad'});
       issueCreated = true;
       for (final file in details.files) {
         await widget.api.uploadOrderFile(widget.orderId, file);
@@ -287,10 +290,12 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
         : e.toString();
     } finally {
       await refresh();
-      if (mounted) setState(() {
-        busy = false;
-        if (submissionError != null) error = submissionError;
-      });
+      if (mounted) {
+        setState(() {
+          busy = false;
+          if (submissionError != null) { error = submissionError; }
+        });
+      }
     }
   }
   Future<void> downloadFile(Map document) async {
@@ -381,11 +386,13 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
           ])),
           panel('Issues (${(data['issues'] as List).length})', Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             for (final item in data['issues'] as List) ListTile(title: Text(item['text'] as String),
-              subtitle: Text('${item['by']} • ${item['resolved_at'] == null ? 'Open' : 'Resolved'}'),
-              trailing: widget.role == 'cad' && data['status'] == 'clinician_issues' && item['resolved_at'] == null
+              subtitle: Text('${item['by']} → ${item['raised_to'] == 'lab' ? 'Lab / Manufacturing' : 'Clinical CAD'} • ${item['resolved_at'] == null ? 'Open' : 'Resolved'}'),
+              trailing: ((widget.role == 'cad' && item['raised_to'] == 'cad' && data['status'] == 'clinician_issues') ||
+                  (widget.role == 'lab' && item['raised_to'] == 'lab' && data['status'] == 'qc_issues')) && item['resolved_at'] == null
                 ? TextButton(onPressed: busy ? null : () => action('POST',
                     '/api/orders/${widget.orderId}/issues/${item['id']}/resolve'), child: const Text('Resolve')) : null),
-            if (widget.role == 'marketing' && data['status'] == 'plan_completed') Align(alignment: Alignment.centerRight,
+            if ((widget.role == 'marketing' && data['status'] == 'plan_completed') ||
+                (widget.role == 'qc' && data['status'] == 'manufactured')) Align(alignment: Alignment.centerRight,
               child: FilledButton(onPressed: busy ? null : raiseIssue, child: const Text('Raise issue'))),
           ])),
           if (widget.role == 'marketing' && ['submitted', 'plan_completed', 'clinician_issues'].contains(data['status']))
