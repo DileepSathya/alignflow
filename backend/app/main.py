@@ -111,6 +111,10 @@ class UserInput(BaseModel):
         return value
 
 
+class UserUpdate(UserInput):
+    password: str | None = None
+
+
 class ClinicInput(BaseModel):
     clinic_name: str = Field(min_length=1)
     dentist_name: str = Field(min_length=1)
@@ -218,6 +222,33 @@ def create_user(body: UserInput, admin=Depends(admin_user), conn=Depends(connect
             "RETURNING id, username, name, role, created_at",
             (body.username, body.password, body.name, body.role),
         )
+        return {"user": cur.fetchone()}
+
+
+@app.patch("/api/users/{user_id}")
+def update_user(user_id: int, body: UserUpdate, admin=Depends(admin_user), conn=Depends(connection)):
+    with conn.cursor() as cur:
+        cur.execute("SELECT role FROM users WHERE id = %s", (user_id,))
+        user = cur.fetchone()
+        if user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        if user["role"] == "admin":
+            raise HTTPException(status_code=400, detail="The admin account cannot be edited")
+        cur.execute("SELECT 1 FROM users WHERE lower(username) = lower(%s) AND id <> %s", (body.username, user_id))
+        if cur.fetchone():
+            raise HTTPException(status_code=409, detail="That username is already taken")
+        if body.password:
+            cur.execute(
+                "UPDATE users SET name = %s, username = %s, role = %s, password = %s WHERE id = %s "
+                "RETURNING id, username, name, role, created_at",
+                (body.name, body.username, body.role, body.password, user_id),
+            )
+        else:
+            cur.execute(
+                "UPDATE users SET name = %s, username = %s, role = %s WHERE id = %s "
+                "RETURNING id, username, name, role, created_at",
+                (body.name, body.username, body.role, user_id),
+            )
         return {"user": cur.fetchone()}
 
 

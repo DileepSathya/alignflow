@@ -39,6 +39,11 @@ class _AdminPageState extends State<AdminPage> {
     if (created == true) refresh();
   }
 
+  Future<void> edit(Map<String, dynamic> user) async {
+    final updated = await showDialog<bool>(context: context, builder: (context) => CreateUserDialog(api: widget.api, user: user));
+    if (updated == true) refresh();
+  }
+
   Future<void> delete(Map<String, dynamic> user) async {
     final confirmed = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
       title: const Text('Delete user?'),
@@ -81,8 +86,10 @@ class _AdminPageState extends State<AdminPage> {
                     leading: CircleAvatar(child: Text((user['name'] as String).substring(0, 1).toUpperCase())),
                     title: Text(user['name'] as String),
                     subtitle: Text('${user['username']}  •  ${roles[user['role']] ?? 'Admin'}'),
-                    trailing: user['role'] == 'admin' ? const Text('Built-in') : IconButton(
-                      tooltip: 'Delete user', icon: const Icon(Icons.delete_outline), onPressed: () => delete(user)),
+                    trailing: user['role'] == 'admin' ? const Text('Built-in') : Row(mainAxisSize: MainAxisSize.min, children: [
+                      IconButton(tooltip: 'Edit user', icon: const Icon(Icons.edit_outlined), onPressed: () => edit(user)),
+                      IconButton(tooltip: 'Delete user', icon: const Icon(Icons.delete_outline), onPressed: () => delete(user)),
+                    ]),
                   );
                 },
               ))),
@@ -93,7 +100,8 @@ class _AdminPageState extends State<AdminPage> {
 
 class CreateUserDialog extends StatefulWidget {
   final Api api;
-  const CreateUserDialog({super.key, required this.api});
+  final Map<String, dynamic>? user;
+  const CreateUserDialog({super.key, required this.api, this.user});
   @override
   State<CreateUserDialog> createState() => _CreateUserDialogState();
 }
@@ -106,17 +114,31 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
   String? error;
   bool saving = false;
 
+  bool get editing => widget.user != null;
+
+  @override
+  void initState() {
+    super.initState();
+    if (editing) {
+      name.text = widget.user!['name'] as String;
+      username.text = widget.user!['username'] as String;
+      role = widget.user!['role'] as String;
+    }
+  }
+
   @override
   void dispose() { name.dispose(); username.dispose(); password.dispose(); super.dispose(); }
 
   Future<void> save() async {
-    if (name.text.trim().isEmpty || username.text.trim().isEmpty || password.text.isEmpty || role == null) {
+    if (name.text.trim().isEmpty || username.text.trim().isEmpty || (!editing && password.text.isEmpty) || role == null) {
       setState(() => error = 'Complete all fields.'); return;
     }
     setState(() { saving = true; error = null; });
     try {
-      await widget.api.request('POST', '/api/users', {
-        'name': name.text.trim(), 'username': username.text.trim(), 'password': password.text, 'role': role,
+      await widget.api.request(editing ? 'PATCH' : 'POST',
+        editing ? '/api/users/${widget.user!['id']}' : '/api/users', {
+        'name': name.text.trim(), 'username': username.text.trim(), 'role': role,
+        if (!editing || password.text.isNotEmpty) 'password': password.text,
       });
       if (mounted) Navigator.pop(context, true);
     } catch (e) { if (mounted) setState(() => error = e.toString()); }
@@ -125,13 +147,13 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Create user'),
+    title: Text(editing ? 'Edit user' : 'Create user'),
     content: SizedBox(width: 420, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
       TextField(controller: name, decoration: const InputDecoration(labelText: 'Full name')),
       const SizedBox(height: 12),
       TextField(controller: username, decoration: const InputDecoration(labelText: 'Username')),
       const SizedBox(height: 12),
-      TextField(controller: password, decoration: const InputDecoration(labelText: 'Password'), obscureText: true),
+      TextField(controller: password, decoration: InputDecoration(labelText: editing ? 'New password (optional)' : 'Password'), obscureText: true),
       const SizedBox(height: 12),
       DropdownButtonFormField<String>(initialValue: role, decoration: const InputDecoration(labelText: 'Team role'),
         items: roles.entries.map((entry) => DropdownMenuItem(value: entry.key, child: Text(entry.value))).toList(),
@@ -139,6 +161,6 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
       if (error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(error!, style: const TextStyle(color: Colors.red))),
     ]))),
     actions: [TextButton(onPressed: saving ? null : () => Navigator.pop(context), child: const Text('Cancel')),
-      FilledButton(onPressed: saving ? null : save, child: Text(saving ? 'Creating...' : 'Create user'))],
+      FilledButton(onPressed: saving ? null : save, child: Text(saving ? 'Saving...' : editing ? 'Save changes' : 'Create user'))],
   );
 }
