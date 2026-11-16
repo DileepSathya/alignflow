@@ -9,9 +9,13 @@ Or run these commands from the project root in PowerShell (enter your PostgreSQL
 & 'C:\Program Files\PostgreSQL\17\bin\psql.exe' -h localhost -U postgres -W -d alignflow -f database/setup.sql
 ```
 
-The script creates the `users`, `sessions`, `clinics`, and `clinicians` tables and seeds `admin` / `admin`. It is safe to rerun if needed. Run it again on an existing database to copy legacy dentist records into `clinicians` and remove the old `dentist_name` column from `clinics`. The clinic name, contact number, email, and area remain on `clinics`. Change the seeded password immediately for any shared environment. The API does not create or migrate tables at startup.
+The script creates the `users`, `sessions`, `clinics`, `clinicians`, `patients`, and `patient_orders` tables and seeds `admin` / `admin`. It is safe to rerun if needed. Run it again on an existing database to copy legacy dentist records into `clinicians` and remove the old `dentist_name` column from `clinics`. The clinic name, contact number, email, and area remain on `clinics`. Change the seeded password immediately for any shared environment. The API does not create or migrate tables at startup.
 
 ## Orders: MongoDB
+
+Patient records and patient-to-order links live in PostgreSQL. New patients receive an application patient ID (`PAT-000001` format). A clinic patient ID is optional and unique within its clinic; supplying the same clinic patient ID on a later order reuses the patient record when name and mobile match. The `/api/patients` endpoint lists or searches PostgreSQL patient records. Patient edits update the linked orders' displayed contact details.
+
+For existing installations, rerun `database/setup.sql`, then run `migrate_patients.py` from the `backend` directory after backing up PostgreSQL and MongoDB. It copies earlier MongoDB patient records to PostgreSQL, links existing orders, and can be rerun. Old MongoDB patient documents are retained for review. Legacy orders did not capture patient mobile numbers or clinician IDs; fill those in from the clinic records where available.
 
 Orders and their uploaded documents use MongoDB. Install and run MongoDB locally, or supply a MongoDB connection string through the API environment:
 

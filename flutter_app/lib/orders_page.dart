@@ -378,9 +378,13 @@ class CreateOrderDialog extends StatefulWidget {
 
 class _CreateOrderDialogState extends State<CreateOrderDialog> {
   final name = TextEditingController(),
+      mobile = TextEditingController(),
+      email = TextEditingController(),
+      clinicPatientId = TextEditingController(),
       age = TextEditingController(),
       notes = TextEditingController();
   int? clinicId;
+  int? clinicianId;
   bool saving = false;
   String? error;
   late final requestId =
@@ -389,6 +393,9 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
   @override
   void dispose() {
     name.dispose();
+    mobile.dispose();
+    email.dispose();
+    clinicPatientId.dispose();
     age.dispose();
     notes.dispose();
     super.dispose();
@@ -403,8 +410,12 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
   }
 
   Future<void> save() async {
-    if (name.text.trim().isEmpty || clinicId == null) {
-      setState(() => error = 'Enter a patient name and select a clinic.');
+    if (name.text.trim().isEmpty ||
+        mobile.text.trim().isEmpty ||
+        clinicId == null ||
+        clinicianId == null) {
+      setState(() => error =
+          'Enter patient name and mobile, then select a clinic and clinician.');
       return;
     }
     final parsedAge =
@@ -422,6 +433,12 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
       final result = await widget.api.request('POST', '/api/orders', {
         'request_id': requestId,
         'patient_name': name.text.trim(),
+        'patient_mobile_number': mobile.text.trim(),
+        'patient_email': email.text.trim().isEmpty ? null : email.text.trim(),
+        'clinic_patient_id': clinicPatientId.text.trim().isEmpty
+            ? null
+            : clinicPatientId.text.trim(),
+        'clinician_id': clinicianId,
         'age': parsedAge,
         'clinic_id': clinicId,
         'notes': notes.text.trim(),
@@ -460,6 +477,23 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
                           const InputDecoration(labelText: 'Patient name *')),
                   const SizedBox(height: 12),
                   TextField(
+                      controller: mobile,
+                      keyboardType: TextInputType.phone,
+                      decoration:
+                          const InputDecoration(labelText: 'Patient mobile *')),
+                  const SizedBox(height: 12),
+                  TextField(
+                      controller: email,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: const InputDecoration(
+                          labelText: 'Patient email (optional)')),
+                  const SizedBox(height: 12),
+                  TextField(
+                      controller: clinicPatientId,
+                      decoration: const InputDecoration(
+                          labelText: 'Clinic patient ID (optional)')),
+                  const SizedBox(height: 12),
+                  TextField(
                       controller: age,
                       keyboardType: TextInputType.number,
                       decoration:
@@ -473,10 +507,23 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
                               value: item['id'] as int,
                               child: Text(item['clinic_name'] as String)))
                           .toList(),
-                      onChanged: (value) => setState(() => clinicId = value)),
+                      onChanged: (value) => setState(() {
+                            clinicId = value;
+                            clinicianId = null;
+                          })),
                   if (clinic != null) ...[
                     const SizedBox(height: 12),
-                    Text('Clinicians: ${((clinic['clinicians'] as List?) ?? []).map((person) => person['name']).join(', ')}'),
+                    DropdownButtonFormField<int>(
+                        initialValue: clinicianId,
+                        decoration:
+                            const InputDecoration(labelText: 'Clinician *'),
+                        items: ((clinic['clinicians'] as List?) ?? [])
+                            .map((person) => DropdownMenuItem<int>(
+                                value: person['clinician_id'] as int,
+                                child: Text(person['name'] as String)))
+                            .toList(),
+                        onChanged: (value) =>
+                            setState(() => clinicianId = value)),
                     Text(
                         'Contact: ${clinic['contact_number']}  •  ${clinic['email'] ?? 'No email'}'),
                   ],
@@ -723,6 +770,12 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
   Future<void> editPatient() async {
     final current = order!;
     final name = TextEditingController(text: current['patient_name'] as String);
+    final mobile = TextEditingController(
+        text: current['patient_mobile_number'] as String? ?? '');
+    final email =
+        TextEditingController(text: current['patient_email'] as String? ?? '');
+    final clinicPatientId = TextEditingController(
+        text: current['clinic_patient_id'] as String? ?? '');
     final age = TextEditingController(text: current['age']?.toString() ?? '');
     final notes =
         TextEditingController(text: current['notes'] as String? ?? '');
@@ -737,6 +790,18 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                           controller: name,
                           decoration:
                               const InputDecoration(labelText: 'Patient name')),
+                      TextField(
+                          controller: mobile,
+                          decoration: const InputDecoration(
+                              labelText: 'Patient mobile')),
+                      TextField(
+                          controller: email,
+                          decoration: const InputDecoration(
+                              labelText: 'Patient email')),
+                      TextField(
+                          controller: clinicPatientId,
+                          decoration: const InputDecoration(
+                              labelText: 'Clinic patient ID')),
                       TextField(
                           controller: age,
                           keyboardType: TextInputType.number,
@@ -758,11 +823,19 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
     if (saved == true) {
       await action('PUT', '/api/orders/${widget.orderId}/patient', {
         'patient_name': name.text.trim(),
+        'patient_mobile_number': mobile.text.trim(),
+        'patient_email': email.text.trim().isEmpty ? null : email.text.trim(),
+        'clinic_patient_id': clinicPatientId.text.trim().isEmpty
+            ? null
+            : clinicPatientId.text.trim(),
         'age': age.text.trim().isEmpty ? null : int.tryParse(age.text.trim()),
         'notes': notes.text.trim(),
       });
     }
     name.dispose();
+    mobile.dispose();
+    email.dispose();
+    clinicPatientId.dispose();
     age.dispose();
     notes.dispose();
   }
@@ -869,6 +942,12 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('Name: ${data['patient_name']}'),
+                          Text('Patient ID: ${data['patient_id'] ?? '—'}'),
+                          Text(
+                              'Clinic patient ID: ${data['clinic_patient_id'] ?? '—'}'),
+                          Text(
+                              'Mobile: ${data['patient_mobile_number'] ?? '—'}'),
+                          Text('Email: ${data['patient_email'] ?? '—'}'),
                           Text('Age: ${data['age'] ?? '—'}'),
                           Text('Case notes: ${data['notes'] ?? ''}'),
                           if (widget.role == 'marketing')
@@ -883,7 +962,8 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('Name: ${(data['clinic'] as Map)['name']}'),
-                          Text('Clinicians: ${((data['clinic'] as Map)['clinicians'] as List?)?.map((person) => person['name']).join(', ') ?? (data['clinic'] as Map)['dentist'] ?? '—'}'),
+                          Text(
+                              'Clinicians: ${((data['clinic'] as Map)['clinicians'] as List?)?.map((person) => person['name']).join(', ') ?? (data['clinic'] as Map)['dentist'] ?? '—'}'),
                           Text(
                               'Contact: ${(data['clinic'] as Map)['contact']}'),
                           Text(

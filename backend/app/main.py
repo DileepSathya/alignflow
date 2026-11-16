@@ -45,6 +45,8 @@ def order_store():
         orders.create_index([("status", ASCENDING), ("created_at", DESCENDING)])
         _orders_indexed = True
     return orders
+
+
 app = FastAPI(title="AlignFlow API")
 
 
@@ -366,6 +368,9 @@ def update_clinic(clinic_id: int, body: ClinicInput, user=Depends(marketing_user
 @app.delete("/api/clinics/{clinic_id}", status_code=204)
 def delete_clinic(clinic_id: int, user=Depends(marketing_user), conn=Depends(connection)):
     with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM patients WHERE clinic_id = %s LIMIT 1", (clinic_id,))
+        if cur.fetchone():
+            raise HTTPException(status_code=409, detail="Clinic has patient records")
         cur.execute("DELETE FROM clinics WHERE id = %s RETURNING id", (clinic_id,))
         if cur.fetchone() is None:
             raise HTTPException(status_code=404, detail="Clinic not found")
@@ -374,6 +379,10 @@ def delete_clinic(clinic_id: int, user=Depends(marketing_user), conn=Depends(con
 class OrderInput(BaseModel):
     request_id: str = Field(min_length=8, max_length=100)
     patient_name: str = Field(min_length=1, max_length=160)
+    patient_mobile_number: str = Field(min_length=1, max_length=30)
+    patient_email: str | None = None
+    clinic_patient_id: str | None = Field(default=None, max_length=100)
+    clinician_id: int
     age: int | None = Field(default=None, ge=0, le=120)
     clinic_id: int
     notes: str = Field(default="", max_length=10000)
@@ -381,6 +390,9 @@ class OrderInput(BaseModel):
 
 class PatientUpdate(BaseModel):
     patient_name: str = Field(min_length=1, max_length=160)
+    patient_mobile_number: str = Field(max_length=30)
+    patient_email: str | None = None
+    clinic_patient_id: str | None = Field(default=None, max_length=100)
     age: int | None = Field(default=None, ge=0, le=120)
     notes: str = Field(default="", max_length=10000)
 
@@ -436,6 +448,24 @@ def get_order(order_id: str, user: dict):
     return doc
 
 
+@app.get("/api/patients")
+def list_patients(clinic_id: int | None = None, q: str = "", user=Depends(current_user),
+                  conn=Depends(connection)):
+    if user["role"] not in {"marketing", "admin"}:
+        raise HTTPException(status_code=403, detail="Patient list is restricted")
+    term = q.strip()
+    id_term = term[4:].lstrip("0") or "0" if term.upper().startswith("PAT-") else term
+    with conn.cursor() as cur:
+        cur.execute("SELECT patient_id, clinic_patient_id, name, mobile_number, email, "
+                    "clinic_id, clinician_id FROM patients WHERE (%s::bigint IS NULL OR clinic_id = %s) "
+                    "AND (%s = '' OR patient_id::text ILIKE %s OR clinic_patient_id ILIKE %s "
+                    "OR name ILIKE %s OR mobile_number ILIKE %s) "
+                    "ORDER BY patient_id DESC LIMIT 100",
+                    (clinic_id, clinic_id, term, f"%{id_term}%", *(f"%{term}%",) * 3))
+        return {"patients": [{**row, "patient_id": f"PAT-{row['patient_id']:06d}"}
+                             for row in cur.fetchall()]}
+
+
 @app.post("/api/orders", status_code=201)
 def create_order(body: OrderInput, user=Depends(marketing_user), conn=Depends(connection)):
     existing = order_store().find_one({"request_id": body.request_id})
@@ -447,17 +477,46 @@ def create_order(body: OrderInput, user=Depends(marketing_user), conn=Depends(co
         cur.execute("SELECT * FROM clinics WHERE id = %s", (body.clinic_id,))
         clinic = cur.fetchone()
         if clinic is not None:
-            cur.execute("SELECT name, mobile_number, email FROM clinicians WHERE clinic_id = %s "
+            cur.execute("SELECT clinician_id, name, mobile_number, email FROM clinicians WHERE clinic_id = %s "
                         "ORDER BY clinician_id", (body.clinic_id,))
             clinic_people = cur.fetchall()
     if clinic is None:
         raise HTTPException(status_code=400, detail="Choose an existing clinic")
+    if body.clinician_id not in {person["clinician_id"] for person in clinic_people}:
+        raise HTTPException(status_code=400, detail="Choose a clinician at this clinic")
+    if not body.patient_name.strip() or not body.patient_mobile_number.strip():
+        raise HTTPException(status_code=422, detail="Patient name and mobile are required")
+    reference = (body.clinic_patient_id or "").strip() or None
+    email = (body.patient_email or "").strip() or None
+    with conn.cursor() as cur:
+        patient = None
+        if reference:
+            cur.execute("SELECT * FROM patients WHERE clinic_id = %s AND clinic_patient_id = %s",
+                        (body.clinic_id, reference))
+            patient = cur.fetchone()
+        if patient is None:
+            cur.execute("INSERT INTO patients (clinic_patient_id, name, mobile_number, email, "
+                        "clinic_id, clinician_id) VALUES (%s, %s, %s, %s, %s, %s) "
+                        "ON CONFLICT (clinic_id, clinic_patient_id) DO NOTHING RETURNING *",
+                        (reference, body.patient_name.strip(), body.patient_mobile_number.strip(),
+                         email, body.clinic_id, body.clinician_id))
+            patient = cur.fetchone()
+            if patient is None:
+                cur.execute("SELECT * FROM patients WHERE clinic_id = %s AND clinic_patient_id = %s",
+                            (body.clinic_id, reference))
+                patient = cur.fetchone()
+        if patient is None or (patient["name"].casefold() != body.patient_name.strip().casefold() or
+                               patient["mobile_number"] != body.patient_mobile_number.strip()):
+            raise HTTPException(status_code=409, detail="Clinic patient ID belongs to a different patient")
     sequence = mongo.counters.find_one_and_update(
         {"_id": "orders"}, {"$inc": {"value": 1}}, upsert=True,
         return_document=ReturnDocument.AFTER)["value"]
     timestamp = now()
     doc = {"order_id": f"ORD-{sequence:06d}", "request_id": body.request_id,
+           "patient_id": f"PAT-{patient['patient_id']:06d}", "clinic_patient_id": patient["clinic_patient_id"],
            "patient_name": body.patient_name.strip(), "age": body.age, "notes": body.notes.strip(),
+           "patient_mobile_number": patient["mobile_number"], "patient_email": patient.get("email"),
+           "clinician_id": body.clinician_id,
            "clinic_id": body.clinic_id,
            "clinic": {"name": clinic["clinic_name"], "clinicians": clinic_people,
                       "contact": clinic["contact_number"], "email": clinic["email"], "area": clinic["area"]},
@@ -472,6 +531,9 @@ def create_order(body: OrderInput, user=Depends(marketing_user), conn=Depends(co
         if existing and existing["created_by"]["id"] == user["id"]:
             return {"order": public_order(existing)}
         raise HTTPException(status_code=409, detail="Duplicate order request")
+    with conn.cursor() as cur:
+        cur.execute("INSERT INTO patient_orders (order_id, patient_id) VALUES (%s, %s)",
+                    (doc["order_id"], patient["patient_id"]))
     return {"order": public_order(doc)}
 
 
@@ -691,10 +753,31 @@ def order_detail(order_id: str, user=Depends(current_user)):
 
 
 @app.put("/api/orders/{order_id}/patient")
-def edit_patient(order_id: str, body: PatientUpdate, user=Depends(marketing_user)):
-    get_order(order_id, user)
+def edit_patient(order_id: str, body: PatientUpdate, user=Depends(marketing_user),
+                 conn=Depends(connection)):
+    order = get_order(order_id, user)
+    reference = (body.clinic_patient_id or "").strip() or None
+    email = (body.patient_email or "").strip() or None
+    with conn.cursor() as cur:
+        cur.execute("SELECT patient_id FROM patient_orders WHERE order_id = %s", (order_id,))
+        linked = cur.fetchone()
+        if linked:
+            try:
+                cur.execute("UPDATE patients SET clinic_patient_id = %s, name = %s, "
+                            "mobile_number = %s, email = %s, updated_at = NOW() "
+                            "WHERE patient_id = %s",
+                            (reference, body.patient_name.strip(), body.patient_mobile_number.strip(),
+                             email, linked["patient_id"]))
+            except psycopg.errors.UniqueViolation:
+                raise HTTPException(status_code=409, detail="Clinic patient ID already belongs to another patient")
+    if linked:
+        order_store().update_many({"patient_id": f"PAT-{linked['patient_id']:06d}"}, {"$set": {
+            "clinic_patient_id": reference, "patient_name": body.patient_name.strip(),
+            "patient_mobile_number": body.patient_mobile_number.strip(), "patient_email": email}})
     order_store().update_one({"order_id": order_id}, {"$set": {
         "patient_name": body.patient_name.strip(), "age": body.age,
+        "clinic_patient_id": reference, "patient_mobile_number": body.patient_mobile_number.strip(),
+        "patient_email": email,
         "notes": body.notes.strip(), "updated_at": now()}})
     return {"order": public_order(get_order(order_id, user))}
 

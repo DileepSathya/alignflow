@@ -38,6 +38,27 @@ CREATE TABLE IF NOT EXISTS clinicians (
 );
 CREATE INDEX IF NOT EXISTS clinicians_clinic_id_idx ON clinicians (clinic_id);
 
+CREATE TABLE IF NOT EXISTS patients (
+    patient_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    clinic_patient_id VARCHAR(100),
+    name VARCHAR(160) NOT NULL,
+    mobile_number VARCHAR(30) NOT NULL,
+    email TEXT,
+    clinic_id BIGINT NOT NULL REFERENCES clinics(id),
+    clinician_id BIGINT REFERENCES clinicians(clinician_id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (clinic_id, clinic_patient_id)
+);
+CREATE INDEX IF NOT EXISTS patients_clinic_id_idx ON patients (clinic_id);
+
+CREATE TABLE IF NOT EXISTS patient_orders (
+    order_id VARCHAR(30) PRIMARY KEY,
+    patient_id BIGINT NOT NULL REFERENCES patients(patient_id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS patient_orders_patient_id_idx ON patient_orders (patient_id);
+
 -- Existing clinics stored the dentist only in the clinics table.
 ALTER TABLE clinics ADD COLUMN IF NOT EXISTS dentist_name TEXT;
 INSERT INTO clinicians (name, mobile_number, email, clinic_id)
