@@ -5,3 +5,5 @@ teams:
     labels: Planning team
   - id: production
     labels: Production team
+  - id: scanner
+    labels: scanner team
