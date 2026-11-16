@@ -72,7 +72,35 @@ The database setup seeds `admin` / `admin`. Change this password before sharing 
 
 # Team configuration
 
-Edit `backend/config.yaml` to change the team labels and their order in the admin user dropdown. Keep the IDs `marketing`, `planning`, and `production`: the API permissions and order workflow use these IDs. Restart the backend after editing the file. The built-in `admin` role is not a team option. Planning contains both Orders and QC; QC opens on the approval-pending queue.
+Edit `backend/config.yaml` to change the team labels and their order in the admin user dropdown. Keep the IDs `marketing`, `scanner`, `planning`, and `production`: the API permissions and order workflow use these IDs. Restart the backend after editing the file. The built-in `admin` role is not a team option. Planning contains both Orders and QC; QC opens on the approval-pending queue.
 
 On backend startup, existing users with the former `cad`, `lab`, and `qc` roles are migrated to `planning`, `production`, and `planning`, respectively. Existing QC issue records remain readable and resolvable.
+
+
+## Scanner review and checklist configuration
+
+The workflow is Marketing → Scanner review → Planning → Production/QC. Create
+Scanner users from the Admin user screen. Scanner can upload missing files,
+select existing order files, verify checklist items, request missing items from
+Marketing, and approve a complete order for Planning. Marketing can upload and
+update checklist evidence but cannot verify or approve it. Requests appear in the
+order details; they do not send an email or an external notification.
+
+Edit `backend/config.yaml` (`scanner_checklist`) to add/remove items or change
+labels, mandatory flags, minimum file counts, allowed extensions, and text
+support. IDs must be unique and stable. Restart the API after changes. Each order
+stores a snapshot: later configuration edits apply only to new orders. The
+initial checklist contains upper/lower STL, bite registration, five intraoral
+photos, three extraoral photos, OPG X-ray, and treatment requirements.
+
+Uploads alone do not complete review. Scanner must verify each mandatory item;
+Admin may authorize individual exceptions with recorded reasons. Final approval
+still belongs to Scanner. Replacing selected evidence clears verification and
+any exception. Earlier checklist uploads remain stored, and the approved
+checklist is locked. Planning API access and claiming are blocked until approval.
+
+On API startup, the PostgreSQL role constraint is updated to include `scanner`.
+On the first order-store access, existing unassigned `submitted` orders without
+scanner approval move to Scanner review with the current checklist. Orders
+already in Planning or later stages retain their existing workflow.
 

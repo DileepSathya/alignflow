@@ -1,3 +1,4 @@
+import 'scanner_checklist.dart';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
@@ -6,7 +7,9 @@ import 'api.dart';
 import 'demo_style.dart';
 
 const _statuses = <String, String>{
-  'submitted': 'Submitted by marketing team',
+  'scanner_review': 'Scanner review',
+  'scanner_missing': 'Missing items',
+  'submitted': 'Ready for Planning',
   'planning_in_progress': 'Planning in progress',
   'plan_completed': 'Clinician review pending',
   'clinician_issues': 'Clinician raised issues',
@@ -23,7 +26,8 @@ String orderStatusLabel(Object? status) =>
     _statuses[status] ?? status?.toString() ?? '';
 
 const _progressSteps = <(String, String)>[
-  ('submitted', 'Submitted by marketing team'),
+  ('scanner_review', 'Scanner review'),
+  ('submitted', 'Scanner approved'),
   ('planning_in_progress', 'Planning in progress'),
   ('plan_completed', 'Plan completed'),
   ('plan_completed', 'Clinician review pending'),
@@ -727,8 +731,8 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
     final isQc = widget.qcMode;
     final details = await showDialog<({String text, List<PlatformFile> files})>(
         context: context,
-        builder: (_) =>
-            RaiseIssueDialog(targetTeam: isQc ? 'Production team' : 'Planning team'));
+        builder: (_) => RaiseIssueDialog(
+            targetTeam: isQc ? 'Production team' : 'Planning team'));
     if (details == null || !mounted) return;
     setState(() {
       busy = true;
@@ -738,8 +742,10 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
     var issueCreated = false;
     String? submissionError;
     try {
-      await widget.api.request('POST', '/api/orders/${widget.orderId}/issues',
-          {'text': details.text, 'raised_to': isQc ? 'production' : 'planning'});
+      await widget.api.request('POST', '/api/orders/${widget.orderId}/issues', {
+        'text': details.text,
+        'raised_to': isQc ? 'production' : 'planning'
+      });
       issueCreated = true;
       for (final file in details.files) {
         await widget.api.uploadOrderFile(widget.orderId, file);
@@ -977,6 +983,12 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                               'Email: ${(data['clinic'] as Map)['email'] ?? '—'}'),
                           Text('Area: ${(data['clinic'] as Map)['area']}'),
                         ])),
+                if (data['checklist'] != null)
+                  ScannerChecklist(
+                      api: widget.api,
+                      order: data,
+                      role: widget.role,
+                      onChanged: refresh),
                 panel(
                     'Documents (${(data['documents'] as List).length})',
                     Column(
@@ -989,7 +1001,13 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                     'Uploaded by ${document['by']} (${document['role']})'),
                                 onTap: () => downloadFile(document as Map),
                                 trailing: widget.role != 'admin' &&
-                                        document['role'] == widget.role
+                                        document['role'] == widget.role &&
+                                        (document['checklist_id'] == null ||
+                                            document['checklist_id'] == '') &&
+                                        !(data['checklist'] as List? ?? []).any(
+                                            (item) =>
+                                                (item['document_ids'] as List)
+                                                    .contains(document['id']))
                                     ? IconButton(
                                         tooltip: 'Delete',
                                         icon: const Icon(Icons.delete_outline),
@@ -1055,14 +1073,22 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                           for (final item in data['issues'] as List)
                             ListTile(
                                 title: Text(item['text'] as String),
-                                subtitle: Text(
-                                    '${item['by']} → ${['lab', 'production'].contains(item['raised_to']) ? 'Production team' : 'Planning team'} • ${item['resolved_at'] == null ? 'Open' : 'Resolved'}'),
+                                subtitle: Text('${item['by']} → ${[
+                                  'lab',
+                                  'production'
+                                ].contains(item['raised_to']) ? 'Production team' : 'Planning team'} • ${item['resolved_at'] == null ? 'Open' : 'Resolved'}'),
                                 trailing: ((widget.role == 'planning' &&
-                                                ['cad', 'planning'].contains(item['raised_to']) &&
+                                                [
+                                                  'cad',
+                                                  'planning'
+                                                ].contains(item['raised_to']) &&
                                                 data['status'] ==
                                                     'clinician_issues') ||
                                             (widget.role == 'production' &&
-                                                ['lab', 'production'].contains(item['raised_to']) &&
+                                                [
+                                                  'lab',
+                                                  'production'
+                                                ].contains(item['raised_to']) &&
                                                 data['status'] ==
                                                     'qc_issues')) &&
                                         item['resolved_at'] == null
@@ -1084,8 +1110,14 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                     child: const Text('Raise issue'))),
                         ])),
                 if (widget.role == 'marketing' &&
-                    ['submitted', 'planning_in_progress', 'plan_completed', 'clinician_issues']
-                        .contains(data['status']))
+                    [
+                      'scanner_review',
+                      'scanner_missing',
+                      'submitted',
+                      'planning_in_progress',
+                      'plan_completed',
+                      'clinician_issues'
+                    ].contains(data['status']))
                   Align(
                       alignment: Alignment.centerLeft,
                       child: TextButton.icon(
@@ -1099,9 +1131,18 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                           label: const Text('Cancel order'))),
                 if (data['assigned_planner'] != null)
                   Text('Planner: ${data['assigned_planner']['name']}'),
-                if (widget.role == 'planning' && !widget.qcMode && data['status'] == 'submitted')
-                  FilledButton(onPressed: busy ? null : () => action('POST', '/api/orders/${widget.orderId}/assign', {}), child: const Text('Assign to me')),
-                if (widget.role == 'planning' && !widget.qcMode && data['status'] == 'planning_in_progress' &&
+                if (widget.role == 'planning' &&
+                    !widget.qcMode &&
+                    data['status'] == 'submitted')
+                  FilledButton(
+                      onPressed: busy
+                          ? null
+                          : () => action('POST',
+                              '/api/orders/${widget.orderId}/assign', {}),
+                      child: const Text('Assign to me')),
+                if (widget.role == 'planning' &&
+                    !widget.qcMode &&
+                    data['status'] == 'planning_in_progress' &&
                     (data['assigned_planner'] as Map?)?['id'] == widget.userId)
                   FilledButton(
                       onPressed: busy

@@ -1,3 +1,4 @@
+import 'role_shell.dart';
 import 'package:flutter/material.dart';
 import 'api.dart';
 import 'orders_page.dart';
@@ -217,7 +218,7 @@ class _MarketingPageState extends State<MarketingPage> {
 
   @override
   Widget build(BuildContext context) {
-    final narrow = MediaQuery.sizeOf(context).width < 900;
+    final narrow = MediaQuery.sizeOf(context).width <= 900;
     final query = search.text.trim().toLowerCase();
     final visible = clinics
         .where((c) => [
@@ -227,179 +228,158 @@ class _MarketingPageState extends State<MarketingPage> {
                   .map((person) => person['name'])
             ].any((v) => (v?.toString().toLowerCase() ?? '').contains(query)))
         .toList();
-    return Scaffold(
-      drawer: narrow ? Drawer(child: sidebar(compact: true)) : null,
-      body: Row(children: [
-        if (!narrow) sidebar(),
-        Expanded(
-            child: Column(children: [
-          if (narrow)
-            AppBar(
-                title: const Text('AlignFlow'),
-                backgroundColor: Colors.white,
-                leading: Builder(
-                    builder: (ctx) => IconButton(
-                        icon: const Icon(Icons.menu),
-                        onPressed: () => Scaffold.of(ctx).openDrawer()))),
-          Expanded(
-              child: Padding(
-                  padding: EdgeInsets.all(narrow ? 16 : 24),
-                  child: section == 'Orders'
-                      ? OrdersPage(
-                          api: widget.api,
-                          clinics: clinics,
-                          user: widget.user,
-                          onTotalChanged: (value) {
-                            if (mounted && orderCount != value) {
-                              setState(() => orderCount = value);
-                            }
-                          })
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                              Row(children: [
-                                Expanded(
-                                    child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                      Text('Clinics',
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .headlineLarge),
-                                      const Text(
-                                          'Partner clinics you contact over WhatsApp.',
-                                          style: TextStyle(
-                                              color: DemoStyle.muted)),
-                                    ])),
-                                FilledButton.icon(
-                                    onPressed: () => edit(),
-                                    icon: const Icon(Icons.add),
-                                    label: Text(narrow ? 'Add' : 'Add clinic'))
-                              ]),
-                              const SizedBox(height: 18),
-                              TextField(
-                                  controller: search,
-                                  decoration: const InputDecoration(
-                                      prefixIcon: Icon(Icons.search),
-                                      hintText:
-                                          'Search clinic, clinician or area',
-                                      filled: true,
-                                      fillColor: Colors.white)),
-                              const SizedBox(height: 18),
-                              if (error != null)
-                                Padding(
-                                    padding: const EdgeInsets.only(bottom: 10),
-                                    child: Text(error!,
-                                        style: const TextStyle(
-                                            color: Colors.red))),
-                              Expanded(
-                                  child: loading
-                                      ? const Center(
-                                          child: CircularProgressIndicator())
-                                      : visible.isEmpty
-                                          ? Center(
-                                              child: Text(query.isEmpty
-                                                  ? 'No clinics yet. Add your first clinic.'
-                                                  : 'No matching clinics.'))
-                                          : narrow
-                                              ? ListView.separated(
-                                                  itemCount: visible.length,
-                                                  separatorBuilder: (_, __) =>
-                                                      const SizedBox(height: 8),
-                                                  itemBuilder: (_, i) => Card(
-                                                          child: ExpansionTile(
-                                                              key: ValueKey(
-                                                                  visible[i]
-                                                                      ['id']),
-                                                              leading: Icon(expandedClinicIds.contains(visible[i]['id'])
-                                                                  ? Icons.remove
-                                                                  : Icons.add),
-                                                              onExpansionChanged:
-                                                                  (value) =>
-                                                                      setState(
-                                                                          () {
-                                                                        if (value) {
-                                                                          expandedClinicIds.add(visible[i]['id']
-                                                                              as int);
-                                                                        } else {
-                                                                          expandedClinicIds.remove(visible[i]
-                                                                              [
-                                                                              'id']);
-                                                                        }
-                                                                      }),
-                                                              title: Text(visible[i]
-                                                                      ['clinic_name']
-                                                                  as String),
-                                                              subtitle:
-                                                                  Text('${visible[i]['contact_number']} • ${visible[i]['area']}'),
-                                                              children: [
-                                                            _clinicianDetails(
-                                                                visible[i]['clinicians']
-                                                                        as List? ??
-                                                                    []),
-                                                            TextButton(
-                                                                onPressed: () =>
-                                                                    showActions(
-                                                                        visible[
-                                                                            i]),
-                                                                child: const Text(
-                                                                    'Edit or delete clinic')),
-                                                          ])))
-                                              : Container(
-                                                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFDFE8EB))),
-                                                  child: Column(children: [
-                                                    Container(
-                                                        height: 40,
-                                                        color: const Color(
-                                                            0xFFE9F0F2),
-                                                        child: const Row(
-                                                            children: [
-                                                              Expanded(
-                                                                  flex: 3,
-                                                                  child: Padding(
-                                                                      padding: EdgeInsets.only(
-                                                                          left:
-                                                                              14),
-                                                                      child: Text(
-                                                                          'CLINIC'))),
-                                                              Expanded(
-                                                                  flex: 2,
-                                                                  child: Text(
-                                                                      'CLINICIANS')),
-                                                              Expanded(
-                                                                  flex: 3,
-                                                                  child: Text(
-                                                                      'CONTACT')),
-                                                              Expanded(
-                                                                  flex: 2,
-                                                                  child: Text(
-                                                                      'AREA')),
-                                                              SizedBox(
-                                                                  width: 92),
-                                                            ])),
+    return RoleShell(
+        sidebar: sidebar(compact: narrow),
+        title: section,
+        content: Padding(
+            padding: EdgeInsets.all(narrow ? 16 : 24),
+            child: section == 'Orders'
+                ? OrdersPage(
+                    api: widget.api,
+                    clinics: clinics,
+                    user: widget.user,
+                    onTotalChanged: (value) {
+                      if (mounted && orderCount != value) {
+                        setState(() => orderCount = value);
+                      }
+                    })
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                        Row(children: [
+                          Expanded(
+                              child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                Text('Clinics',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .headlineLarge),
+                                const Text(
+                                    'Partner clinics you contact over WhatsApp.',
+                                    style: TextStyle(color: DemoStyle.muted)),
+                              ])),
+                          FilledButton.icon(
+                              onPressed: () => edit(),
+                              icon: const Icon(Icons.add),
+                              label: Text(narrow ? 'Add' : 'Add clinic'))
+                        ]),
+                        const SizedBox(height: 18),
+                        TextField(
+                            controller: search,
+                            decoration: const InputDecoration(
+                                prefixIcon: Icon(Icons.search),
+                                hintText: 'Search clinic, clinician or area',
+                                filled: true,
+                                fillColor: Colors.white)),
+                        const SizedBox(height: 18),
+                        if (error != null)
+                          Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: Text(error!,
+                                  style: const TextStyle(color: Colors.red))),
+                        Expanded(
+                            child: loading
+                                ? const Center(
+                                    child: CircularProgressIndicator())
+                                : visible.isEmpty
+                                    ? Center(
+                                        child: Text(query.isEmpty
+                                            ? 'No clinics yet. Add your first clinic.'
+                                            : 'No matching clinics.'))
+                                    : narrow
+                                        ? ListView.separated(
+                                            itemCount: visible.length,
+                                            separatorBuilder: (_, __) =>
+                                                const SizedBox(height: 8),
+                                            itemBuilder: (_, i) => Card(
+                                                    child: ExpansionTile(
+                                                        key: ValueKey(
+                                                            visible[i]['id']),
+                                                        leading: Icon(
+                                                            expandedClinicIds.contains(
+                                                                    visible[i]
+                                                                        ['id'])
+                                                                ? Icons.remove
+                                                                : Icons.add),
+                                                        onExpansionChanged:
+                                                            (value) =>
+                                                                setState(() {
+                                                                  if (value) {
+                                                                    expandedClinicIds.add(visible[i]
+                                                                            [
+                                                                            'id']
+                                                                        as int);
+                                                                  } else {
+                                                                    expandedClinicIds.remove(
+                                                                        visible[i]
+                                                                            [
+                                                                            'id']);
+                                                                  }
+                                                                }),
+                                                        title: Text(visible[i]
+                                                                ['clinic_name']
+                                                            as String),
+                                                        subtitle: Text('${visible[i]['contact_number']} • ${visible[i]['area']}'),
+                                                        children: [
+                                                      _clinicianDetails(visible[
+                                                                      i]
+                                                                  ['clinicians']
+                                                              as List? ??
+                                                          []),
+                                                      TextButton(
+                                                          onPressed: () =>
+                                                              showActions(
+                                                                  visible[i]),
+                                                          child: const Text(
+                                                              'Edit or delete clinic')),
+                                                    ])))
+                                        : Container(
+                                            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFDFE8EB))),
+                                            child: Column(children: [
+                                              Container(
+                                                  height: 40,
+                                                  color:
+                                                      const Color(0xFFE9F0F2),
+                                                  child: const Row(children: [
                                                     Expanded(
-                                                        child: ListView.separated(
-                                                            itemCount:
-                                                                visible.length,
-                                                            separatorBuilder: (_,
-                                                                    __) =>
-                                                                const Divider(
-                                                                    height: 1),
-                                                            itemBuilder: (_, i) => ClinicRow(
-                                                                key: ValueKey(visible[i]['id']),
-                                                                clinic:
-                                                                    visible[i],
-                                                                onEdit: () => edit(
-                                                                    visible[i]),
-                                                                onDelete: () =>
-                                                                    delete(visible[
-                                                                        i])))),
-                                                  ]))),
-                            ]))),
-        ]))
-      ]),
-    );
+                                                        flex: 3,
+                                                        child: Padding(
+                                                            padding:
+                                                                EdgeInsets.only(
+                                                                    left: 14),
+                                                            child: Text(
+                                                                'CLINIC'))),
+                                                    Expanded(
+                                                        flex: 2,
+                                                        child:
+                                                            Text('CLINICIANS')),
+                                                    Expanded(
+                                                        flex: 3,
+                                                        child: Text('CONTACT')),
+                                                    Expanded(
+                                                        flex: 2,
+                                                        child: Text('AREA')),
+                                                    SizedBox(width: 92),
+                                                  ])),
+                                              Expanded(
+                                                  child: ListView.separated(
+                                                      itemCount: visible.length,
+                                                      separatorBuilder:
+                                                          (_, __) =>
+                                                              const Divider(
+                                                                  height: 1),
+                                                      itemBuilder: (_, i) => ClinicRow(
+                                                          key: ValueKey(
+                                                              visible[i]['id']),
+                                                          clinic: visible[i],
+                                                          onEdit: () =>
+                                                              edit(visible[i]),
+                                                          onDelete: () =>
+                                                              delete(visible[
+                                                                  i])))),
+                                            ]))),
+                      ])));
   }
 }
 

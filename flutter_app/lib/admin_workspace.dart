@@ -1,3 +1,4 @@
+import 'role_shell.dart';
 import 'package:flutter/material.dart';
 import 'api.dart';
 import 'admin_page.dart';
@@ -130,41 +131,28 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
               },
               child: const Text('Log out')),
         ]));
-    return Scaffold(
-        drawer: compact ? Drawer(child: rail()) : null,
-        body: Row(children: [
-          if (!compact) rail(),
-          Expanded(
-              child: Column(children: [
-            if (compact)
-              Builder(
-                  builder: (context) => AppBar(
-                      title: Text(section),
-                      leading: IconButton(
-                          icon: const Icon(Icons.menu),
-                          onPressed: () => Scaffold.of(context).openDrawer()))),
-            Expanded(
-                child: switch (section) {
-              'Users' => AdminPage(
-                  api: widget.api,
-                  user: widget.user,
-                  onLogout: widget.onLogout,
-                  embedded: true,
-                  onUsersChanged: refreshCounts),
-              'Performance' => AdminPerformanceView(api: widget.api),
-              _ => AdminOrdersView(
-                  api: widget.api,
-                  onOverviewChanged: (data) {
-                    if (mounted) {
-                      setState(() {
-                        orderCount = data['total_orders'] as int;
-                        userCount = data['users'] as int;
-                      });
-                    }
-                  }),
-            }),
-          ]))
-        ]));
+    return RoleShell(
+        sidebar: rail(),
+        title: section,
+        content: switch (section) {
+          'Users' => AdminPage(
+              api: widget.api,
+              user: widget.user,
+              onLogout: widget.onLogout,
+              embedded: true,
+              onUsersChanged: refreshCounts),
+          'Performance' => AdminPerformanceView(api: widget.api),
+          _ => AdminOrdersView(
+              api: widget.api,
+              onOverviewChanged: (data) {
+                if (mounted) {
+                  setState(() {
+                    orderCount = data['total_orders'] as int;
+                    userCount = data['users'] as int;
+                  });
+                }
+              }),
+        });
   }
 }
 
@@ -500,7 +488,9 @@ class _AdminOrderRow extends StatelessWidget {
       cell('PATIENT', '${data['patient_name'] ?? ''}', 14,
           sub: age == null ? null : '$age yrs', bold: true),
       cell('CLINIC', '${clinic['name'] ?? ''}', 14,
-          sub: (clinic['clinicians'] as List?)?.map((person) => person['name']).join(', ') ??
+          sub: (clinic['clinicians'] as List?)
+                  ?.map((person) => person['name'])
+                  .join(', ') ??
               clinic['dentist']?.toString()),
       _stage('CURRENT STATUS', header ? '' : _currentStatusLabel(status), 17,
           tone: _statusTone(status)),
@@ -593,7 +583,8 @@ class _AdminOrderRow extends StatelessWidget {
       _reached(order, 'manufactured') ||
               {'qc_approved', 'manufacture_completed'}.contains(order['status'])
           ? 'Completed'
-          : {'clinician_approved', 'manufacturing_in_process'}.contains(order['status'])
+          : {'clinician_approved', 'manufacturing_in_process'}
+                  .contains(order['status'])
               ? 'Pending'
               : 'Not started';
   static String _manufacturingTone(Map<String, dynamic> order) =>

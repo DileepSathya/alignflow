@@ -24,7 +24,7 @@ class _Orders:
         return []
 
     def aggregate(self, pipeline):
-        if "$match" in pipeline[0]:
+        if "clinic_id" in pipeline[0].get("$match", {}):
             return iter([{"_id": 3, "name": "ABC clinic"}])
         return iter([
             {"_id": "submitted", "count": 1},

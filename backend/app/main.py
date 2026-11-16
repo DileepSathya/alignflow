@@ -12,7 +12,8 @@ from pymongo import MongoClient, ReturnDocument, ASCENDING, DESCENDING
 from pymongo.errors import DuplicateKeyError
 from pymongo.errors import ServerSelectionTimeoutError, OperationFailure
 from bson import ObjectId
-from fastapi import File, UploadFile
+from fastapi import File, UploadFile, Form
+from copy import deepcopy
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.responses import JSONResponse
 from gridfs import GridFS
@@ -32,12 +33,14 @@ class Settings(BaseSettings):
 
 settings = Settings()
 TEAM_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config.yaml"
+CONFIG = yaml.safe_load(TEAM_CONFIG_PATH.read_text(encoding="utf-8"))
+SCANNER_CHECKLIST = CONFIG["scanner_checklist"]
 
 
 def load_teams():
-    teams = yaml.safe_load(TEAM_CONFIG_PATH.read_text(encoding="utf-8"))["teams"]
+    teams = CONFIG["teams"]
     ids = [team["id"] for team in teams]
-    if set(ids) != {"marketing", "planning", "production"} or len(ids) != 3 or any(
+    if set(ids) != {"marketing", "scanner", "planning", "production"} or len(ids) != 4 or any(
         not isinstance(team.get("id"), str) or not isinstance(team.get("labels"), str)
         or not team["id"] or not team["labels"].strip() or team["id"] == "admin"
         for team in teams
@@ -61,6 +64,10 @@ def order_store():
         orders.create_index("request_id", unique=True, sparse=True)
         orders.create_index([("created_at", DESCENDING)])
         orders.create_index([("status", ASCENDING), ("created_at", DESCENDING)])
+        orders.update_many({"status": "submitted", "assigned_planner": None,
+                            "scanner_approved": {"$ne": True}},
+                           {"$set": {"status": "scanner_review", "checklist": new_checklist(),
+                                     "updated_at": now()}})
         _orders_indexed = True
     return orders
 
@@ -108,7 +115,7 @@ def migrate_clinic_attribution():
                         "WHEN 'qc' THEN 'planning' ELSE role END "
                         "WHERE role IN ('cad', 'lab', 'qc')")
             cur.execute("ALTER TABLE users ADD CONSTRAINT users_role_check "
-                        "CHECK (role IN ('admin', 'marketing', 'planning', 'production'))")
+                        "CHECK (role IN ('admin', 'marketing', 'scanner', 'planning', 'production'))")
 
 
 class LoginInput(BaseModel):
@@ -453,6 +460,143 @@ def now():
     return datetime.now(timezone.utc)
 
 
+SCANNER_STEPS = ["scanner_review", "scanner_missing"]
+
+
+def planning_visibility():
+    return {"status": {"$nin": SCANNER_STEPS}, "$or": [
+        {"checklist": {"$exists": False}}, {"scanner_approved": True}]}
+
+
+def new_checklist():
+    ids = set()
+    result = []
+    for definition in SCANNER_CHECKLIST:
+        if (not definition["id"] or definition["id"] in ids or
+                not definition["label"] or definition["min_files"] < 1 or
+                not definition["extensions"] or
+                any(ext not in {".pdf", ".jpg", ".jpeg", ".png", ".stl"} for ext in definition["extensions"])):
+            raise ValueError("Invalid SCANNER_CHECKLIST definition")
+        ids.add(definition["id"])
+        result.append({**deepcopy(definition), "document_ids": [], "text": "",
+                       "verified": False, "waiver": None})
+    return result
+
+
+new_checklist()  # Fail early for invalid developer configuration.
+
+
+def item_ready(item, doc):
+    documents = {d["id"]: d for d in doc.get("documents", [])}
+    selected = set(item.get("document_ids", []))
+    valid = [documents[key] for key in selected if key in documents and
+             Path(documents[key]["name"]).suffix.lower() in item["extensions"]]
+    return (item["allow_text"] and bool(item.get("text", "").strip())) or len(valid) >= item["min_files"]
+
+
+class ChecklistInput(BaseModel):
+    document_ids: list[str] = Field(default_factory=list)
+    text: str = Field(default="", max_length=10000)
+    verified: bool = False
+    waiver_reason: str | None = Field(default=None, max_length=2000)
+
+
+class MissingItemsInput(BaseModel):
+    note: str = Field(min_length=1, max_length=5000)
+
+
+def save_scanner_change(doc, fields, user, action):
+    timestamp = now()
+    events = {"scanner_history": {"action": action, "by": user["name"], "user_id": user["id"],
+                                  "at": timestamp.isoformat(), "details": fields}}
+    if "status" in fields:
+        events["history"] = {"status": fields["status"], "at": timestamp, "by": user["name"]}
+    updated = order_store().find_one_and_update(
+        {"order_id": doc["order_id"], "status": doc["status"], "updated_at": doc["updated_at"],
+         "review_revision": doc.get("review_revision")},
+        {"$set": {**fields, "updated_at": timestamp}, "$push": events,
+         "$inc": {"review_revision": 1}},
+        return_document=ReturnDocument.AFTER)
+    if updated is None:
+        raise HTTPException(status_code=409, detail="Order changed; reload and try again")
+    return {"order": public_order(updated)}
+
+
+def scanner_review_order(order_id, user):
+    doc = get_order(order_id, user)
+    if doc["status"] not in SCANNER_STEPS:
+        raise HTTPException(status_code=409, detail="Order is not awaiting scanner review")
+    return doc
+
+
+@app.get("/api/scanner/checklist")
+def checklist_config(user=Depends(current_user)):
+    return {"items": deepcopy(SCANNER_CHECKLIST)}
+
+
+@app.put("/api/orders/{order_id}/checklist/{item_id}")
+def update_checklist(order_id: str, item_id: str, body: ChecklistInput, user=Depends(current_user)):
+    if user["role"] not in {"marketing", "scanner", "admin"}:
+        raise HTTPException(status_code=403, detail="Team cannot edit checklist")
+    doc = scanner_review_order(order_id, user)
+    checklist = deepcopy(doc["checklist"])
+    item = next((i for i in checklist if i["id"] == item_id), None)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Checklist item not found")
+    if body.waiver_reason is not None:
+        if user["role"] != "admin":
+            raise HTTPException(status_code=403, detail="Admin only exceptions")
+        if not body.waiver_reason.strip():
+            raise HTTPException(status_code=422, detail="Exception reason is required")
+        item["waiver"] = {"reason": body.waiver_reason.strip(), "by": user["name"],
+                          "user_id": user["id"], "at": now().isoformat()}
+    else:
+        if user["role"] == "admin" or (body.verified and user["role"] != "scanner"):
+            raise HTTPException(status_code=403, detail="Only Scanner can verify items")
+        docs = {d["id"]: d for d in doc["documents"]}
+        if any(key not in docs or Path(docs[key]["name"]).suffix.lower() not in item["extensions"]
+               for key in body.document_ids):
+            raise HTTPException(status_code=422, detail="Select valid files from this order")
+        if body.text.strip() and not item["allow_text"]:
+            raise HTTPException(status_code=422, detail="This item requires files")
+        item.update(document_ids=list(dict.fromkeys(body.document_ids)), text=body.text.strip(),
+                    verified=body.verified, waiver=None)
+        if body.verified and not item_ready(item, doc):
+            raise HTTPException(status_code=409, detail="Upload all required files before verifying")
+        item["verified_by"] = user["name"] if body.verified else None
+        item["verified_at"] = now().isoformat() if body.verified else None
+    return save_scanner_change(doc, {"checklist": checklist}, user, "Updated " + item_id)
+
+
+@app.post("/api/orders/{order_id}/scanner/request-missing")
+def request_missing(order_id: str, body: MissingItemsInput, user=Depends(current_user)):
+    if user["role"] != "scanner":
+        raise HTTPException(status_code=403, detail="Scanner team only")
+    doc = scanner_review_order(order_id, user)
+    if not body.note.strip():
+        raise HTTPException(status_code=422, detail="Enter a note for Marketing")
+    missing = [i["label"] for i in doc["checklist"] if i["mandatory"] and
+               not i.get("waiver") and not (i["verified"] and item_ready(i, doc))]
+    if not missing:
+        raise HTTPException(status_code=409, detail="No mandatory items are missing review")
+    return save_scanner_change(doc, {"status": "scanner_missing", "missing_request": {
+        "note": body.note.strip(), "items": missing, "by": user["name"], "at": now().isoformat()}},
+        user, "Requested missing items")
+
+
+@app.post("/api/orders/{order_id}/scanner/approve")
+def approve_scanner(order_id: str, user=Depends(current_user)):
+    if user["role"] != "scanner":
+        raise HTTPException(status_code=403, detail="Scanner team only")
+    doc = scanner_review_order(order_id, user)
+    if any(i["mandatory"] and not i.get("waiver") and
+           not (i["verified"] and item_ready(i, doc)) for i in doc["checklist"]):
+        raise HTTPException(status_code=409, detail="Complete the mandatory checklist first")
+    return save_scanner_change(doc, {"status": "submitted", "scanner_approved": True,
+        "scanner_approval": {"by": user["name"], "user_id": user["id"], "at": now().isoformat()}},
+        user, "Approved for Planning")
+
+
 def public_order(doc):
     result = {k: v for k, v in doc.items() if k not in {"_id", "request_id"}}
     result["id"] = str(doc["_id"])
@@ -473,6 +617,9 @@ def get_order(order_id: str, user: dict):
     doc = order_store().find_one({"order_id": order_id})
     if doc is None or (user["role"] == "production" and
                        doc["status"] not in VISIBLE_PRODUCTION_STEPS):
+        raise HTTPException(status_code=404, detail="Order not found")
+    if user["role"] == "planning" and (doc["status"] in SCANNER_STEPS or
+            ("checklist" in doc and not doc.get("scanner_approved"))):
         raise HTTPException(status_code=404, detail="Order not found")
     return doc
 
@@ -549,9 +696,9 @@ def create_order(body: OrderInput, user=Depends(marketing_user), conn=Depends(co
            "clinic_id": body.clinic_id,
            "clinic": {"name": clinic["clinic_name"], "clinicians": clinic_people,
                       "contact": clinic["contact_number"], "email": clinic["email"], "area": clinic["area"]},
-           "status": "submitted", "created_at": timestamp, "updated_at": timestamp,
+           "status": "scanner_review", "checklist": new_checklist(), "created_at": timestamp, "updated_at": timestamp,
            "created_by": {"id": user["id"], "name": user["name"], "role": user["role"]},
-           "history": [{"status": "submitted", "at": timestamp, "by": user["name"]}],
+           "history": [{"status": "scanner_review", "at": timestamp, "by": user["name"]}],
            "comments": [], "issues": [], "documents": []}
     try:
         doc["_id"] = order_store().insert_one(doc).inserted_id
@@ -610,11 +757,17 @@ def marketing_performance(year: int, month: int, user=Depends(admin_user), conn=
 
 @app.get("/api/orders")
 def list_orders(q: str = "", status_filter: str = "", status_group: str = "", view: str = "",
-                clinic_id: int | None = None, page: int = 1, limit: int = 25, mine: bool = False,
+                clinic_id: int | None = None, page: int = 1, limit: int = 25, mine: bool = False, scanner_approved: bool = False,
+                scanner_missing: bool = False,
                 user=Depends(current_user)):
     if page < 1 or not 1 <= limit <= 100:
         raise HTTPException(status_code=400, detail="Invalid page or limit")
     query = {}
+    if scanner_approved:
+        query["scanner_approved"] = True
+    if scanner_missing:
+        query["status"] = {"$in": SCANNER_STEPS}
+        query["checklist"] = {"$elemMatch": {"mandatory": True, "verified": False, "waiver": None}}
     if mine and user["role"] != "planning":
         raise HTTPException(status_code=403, detail="Planning team only")
     if mine:
@@ -676,6 +829,10 @@ def list_orders(q: str = "", status_filter: str = "", status_group: str = "", vi
         pattern = re.escape(q.strip()[:100])
         query["$or"] = [{field: {"$regex": pattern, "$options": "i"}}
                         for field in ("order_id", "patient_name", "clinic.name", "clinic.dentist")]
+    if user["role"] == "planning":
+        query["$and"] = [planning_visibility()]
+    if user["role"] == "scanner":
+        query.setdefault("checklist", {"$exists": True})
     collection = order_store()
     total = collection.count_documents(query)
     rows = collection.find(query).sort("created_at", DESCENDING).skip((page - 1) * limit).limit(limit)
@@ -688,11 +845,12 @@ def cad_overview(user=Depends(current_user)):
         raise HTTPException(status_code=403, detail="Planning team only")
     collection = order_store()
     statuses = {row["_id"]: row["count"] for row in collection.aggregate([
+        {"$match": planning_visibility()},
         {"$group": {"_id": "$status", "count": {"$sum": 1}}},
     ])}
     clinics = [{"id": row["_id"], "name": row["name"]}
                for row in collection.aggregate([
-                   {"$match": {"clinic_id": {"$ne": None}}},
+                   {"$match": {"clinic_id": {"$ne": None}, **planning_visibility()}},
                    {"$group": {"_id": "$clinic_id", "name": {"$first": "$clinic.name"}}},
                    {"$sort": {"name": 1}},
                ])]
@@ -892,7 +1050,7 @@ def assign_order(order_id: str, user=Depends(current_user)):
         raise HTTPException(status_code=403, detail="Planning team only")
     timestamp = now()
     updated = order_store().find_one_and_update(
-        {"order_id": order_id, "status": "submitted", "assigned_planner": None},
+        {"order_id": order_id, "status": "submitted", "assigned_planner": None, "scanner_approved": True},
         {"$set": {"status": "planning_in_progress", "assigned_planner": {"id": user["id"], "name": user["name"]}, "assigned_at": timestamp, "updated_at": timestamp},
          "$push": {"history": {"status": "planning_in_progress", "at": timestamp, "by": user["name"]}}},
         return_document=ReturnDocument.AFTER)
@@ -909,7 +1067,7 @@ def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
     if target == "cancelled":
         if user["role"] != "marketing":
             raise HTTPException(status_code=403, detail="Marketing team only")
-        if doc["status"] not in ORDER_STEPS[:4]:
+        if doc["status"] not in ORDER_STEPS[:4] + SCANNER_STEPS:
             raise HTTPException(status_code=409, detail="Order cannot be cancelled after clinician approval")
     else:
         legacy_review_reset = (target == "plan_completed" and doc["status"] == "clinician_issues"
@@ -947,10 +1105,18 @@ def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
 
 
 @app.post("/api/orders/{order_id}/documents", status_code=201)
-async def upload_order_document(order_id: str, file: UploadFile = File(...), user=Depends(current_user)):
+async def upload_order_document(order_id: str, file: UploadFile = File(...), user=Depends(current_user), checklist_id: str = Form("")):
     doc = get_order(order_id, user)
     if doc["status"] == "cancelled":
         raise HTTPException(status_code=409, detail="Order is cancelled")
+    if not isinstance(checklist_id, str):
+        checklist_id = ""
+    if checklist_id:
+        if user["role"] not in {"marketing", "scanner"} or doc["status"] not in SCANNER_STEPS:
+            raise HTTPException(status_code=403, detail="Checklist uploads require Marketing or Scanner before approval")
+        item = next((i for i in doc.get("checklist", []) if i["id"] == checklist_id), None)
+        if item is None or Path(file.filename or "").suffix.lower() not in item["extensions"]:
+            raise HTTPException(status_code=400, detail="File type does not match the checklist item")
     allowed = {"application/pdf", "image/jpeg", "image/png", "model/stl", "application/sla", "application/octet-stream"}
     filename = (file.filename or "file").split("/")[-1].split("\\")[-1][:200]
     if file.content_type not in allowed or not filename.lower().endswith((".pdf", ".jpg", ".jpeg", ".png", ".stl")):
@@ -961,10 +1127,20 @@ async def upload_order_document(order_id: str, file: UploadFile = File(...), use
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     meta = {"id": str(ObjectId()), "storage_key": key, "name": filename,
             "size": size, "sha256": checksum, "content_type": file.content_type,
-            "at": now(), "by": user["name"], "role": user["role"]}
+            "at": now(), "by": user["name"], "role": user["role"], "checklist_id": checklist_id}
     try:
-        result = order_store().update_one({"order_id": order_id, "status": {"$ne": "cancelled"}},
-            {"$push": {"documents": meta}, "$set": {"updated_at": now()}})
+        fields = {"updated_at": now()}
+        if checklist_id:
+            checklist = deepcopy(doc["checklist"])
+            item = next(i for i in checklist if i["id"] == checklist_id)
+            item["document_ids"].append(meta["id"])
+            item["verified"] = False
+            item["waiver"] = None
+            fields["checklist"] = checklist
+        result = order_store().update_one({"order_id": order_id, "status": doc["status"],
+                                           "updated_at": doc["updated_at"],
+                                           "review_revision": doc.get("review_revision")},
+            {"$push": {"documents": meta}, "$set": fields, "$inc": {"review_revision": 1}})
         if result.matched_count != 1:
             raise HTTPException(status_code=409, detail="Order changed while uploading")
     except BaseException:
@@ -1001,8 +1177,15 @@ def delete_order_document(order_id: str, document_id: str, user=Depends(current_
         raise HTTPException(status_code=404, detail="Document not found")
     if user["role"] != meta["role"] and user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Only the uploading team can delete this document")
-    result = order_store().update_one({"order_id": order_id, "documents.id": document_id},
-                                      {"$pull": {"documents": {"id": document_id}}})
+    previous_items = [item for event in doc.get("scanner_history", [])
+                      for item in event.get("details", {}).get("checklist", [])]
+    if meta.get("checklist_id") or any(document_id in i.get("document_ids", [])
+                                      for i in doc.get("checklist", []) + previous_items):
+        raise HTTPException(status_code=409, detail="Checklist files are retained as history; update selected files instead")
+    result = order_store().update_one({"order_id": order_id, "documents.id": document_id,
+                                      "updated_at": doc["updated_at"], "review_revision": doc.get("review_revision")},
+                                      {"$pull": {"documents": {"id": document_id}}, "$set": {"updated_at": now()},
+                                       "$inc": {"review_revision": 1}})
     if result.modified_count != 1:
         raise HTTPException(status_code=409, detail="Document changed; reload and try again")
     if key := meta.get("storage_key"):

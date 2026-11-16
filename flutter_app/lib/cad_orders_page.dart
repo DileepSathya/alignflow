@@ -1,3 +1,4 @@
+import 'role_shell.dart';
 import 'package:flutter/material.dart';
 import 'api.dart';
 import 'demo_style.dart';
@@ -173,9 +174,13 @@ class _CadOrdersPageState extends State<CadOrdersPage> {
             title: const Text('QC', style: TextStyle(fontSize: 13)),
             onTap: () {
               if (compact) Navigator.of(context).pop();
-              Navigator.push(context, MaterialPageRoute(builder: (_) =>
-                  QcOrdersPage(api: widget.api, user: widget.user,
-                      onLogout: widget.onLogout)));
+              Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => QcOrdersPage(
+                          api: widget.api,
+                          user: widget.user,
+                          onLogout: widget.onLogout)));
             }),
         const Spacer(),
         const Divider(),
@@ -191,219 +196,200 @@ class _CadOrdersPageState extends State<CadOrdersPage> {
   Widget build(BuildContext context) {
     final compact = MediaQuery.sizeOf(context).width <= 900;
     final clinics = (overview['clinics'] as List?) ?? [];
-    return Scaffold(
-        drawer: compact ? Drawer(child: rail(true)) : null,
-        body: Row(children: [
-          if (!compact) rail(false),
-          Expanded(
-              child: Column(children: [
-            if (compact)
-              Builder(
-                  builder: (context) => AppBar(
-                      title: const Text('Orders'),
-                      leading: IconButton(
-                          icon: const Icon(Icons.menu),
-                          onPressed: () => Scaffold.of(context).openDrawer()))),
-            Expanded(
-                child: Center(
-                    child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 1240),
-                        child: Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
-                            child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
+    return RoleShell(
+        sidebar: rail(compact),
+        title: 'Orders',
+        content: Center(
+            child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1240),
+                child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const DemoPageHeading(
+                              title: 'Orders',
+                              subtitle:
+                                  'New orders appear in Unassigned. Claim an order to start planning, then complete the plan for clinician review.'),
+                          const SizedBox(height: 20),
+                          SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(children: [
+                                for (final tab in _tabs)
+                                  Padding(
+                                      padding: const EdgeInsets.only(right: 8),
+                                      child: ChoiceChip(
+                                          label: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(tab.$2),
+                                                const SizedBox(width: 6),
+                                                Text(
+                                                    '${overview[tab.$1.isEmpty ? 'all_orders' : tab.$1] ?? '—'}',
+                                                    style: const TextStyle(
+                                                        fontFamily: 'monospace',
+                                                        fontSize: 11)),
+                                              ]),
+                                          selected: group == tab.$1,
+                                          selectedColor: DemoStyle.accent,
+                                          backgroundColor: Colors.white,
+                                          labelStyle: TextStyle(
+                                              color: group == tab.$1
+                                                  ? Colors.white
+                                                  : DemoStyle.ink),
+                                          side: BorderSide(
+                                              color: group == tab.$1
+                                                  ? DemoStyle.accent
+                                                  : DemoStyle.line),
+                                          showCheckmark: false,
+                                          onSelected: (_) {
+                                            setState(() => group = tab.$1);
+                                            page = 1;
+                                            refresh();
+                                          })),
+                              ])),
+                          const SizedBox(height: 16),
+                          Row(children: [
+                            Expanded(
+                                child: TextField(
+                                    controller: search,
+                                    decoration: InputDecoration(
+                                        prefixIcon: const Icon(Icons.search),
+                                        hintText:
+                                            'Search patient, clinic or order ID',
+                                        suffixIcon: IconButton(
+                                            tooltip: 'Search',
+                                            icon:
+                                                const Icon(Icons.arrow_forward),
+                                            onPressed: () {
+                                              query = search.text.trim();
+                                              page = 1;
+                                              refresh();
+                                            })),
+                                    onSubmitted: (value) {
+                                      query = value.trim();
+                                      page = 1;
+                                      refresh();
+                                    })),
+                            const SizedBox(width: 10),
+                            SizedBox(
+                                width: compact ? 140 : 180,
+                                child: DropdownButtonFormField<int?>(
+                                    initialValue: clinicId,
+                                    isExpanded: true,
+                                    decoration: const InputDecoration(),
+                                    items: [
+                                      const DropdownMenuItem<int?>(
+                                          value: null,
+                                          child: Text('All clinics')),
+                                      for (final clinic in clinics)
+                                        DropdownMenuItem<int?>(
+                                            value: clinic['id'] as int,
+                                            child: Text('${clinic['name']}',
+                                                overflow:
+                                                    TextOverflow.ellipsis))
+                                    ],
+                                    onChanged: (value) {
+                                      setState(() => clinicId = value);
+                                      page = 1;
+                                      refresh();
+                                    })),
+                          ]),
+                          const SizedBox(height: 16),
+                          if (error != null)
+                            Text(error!,
+                                style:
+                                    const TextStyle(color: DemoStyle.danger)),
+                          Expanded(
+                              child: loading
+                                  ? const Center(
+                                      child: CircularProgressIndicator())
+                                  : orders.isEmpty
+                                      ? const Center(
+                                          child: Text('No matching orders.'))
+                                      : compact
+                                          ? ListView.separated(
+                                              itemCount: orders.length,
+                                              separatorBuilder: (_, __) =>
+                                                  const SizedBox(height: 8),
+                                              itemBuilder: (_, i) => DemoPanel(
+                                                  child: ListTile(
+                                                      onTap: () =>
+                                                          openOrder(orders[i]),
+                                                      title: Text(
+                                                          '${orders[i]['order_id']}  •  ${orders[i]['patient_name']}',
+                                                          style: const TextStyle(
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w700)),
+                                                      subtitle: Text(
+                                                          '${(orders[i]['clinic'] as Map?)?['name'] ?? ''}  •  ${orderStatusLabel(orders[i]['status'])}'),
+                                                      trailing: const Icon(
+                                                          Icons.chevron_right))))
+                                          : Align(
+                                              alignment: Alignment.topCenter,
+                                              child: SingleChildScrollView(
+                                                  child: SingleChildScrollView(
+                                                      scrollDirection: Axis.horizontal,
+                                                      child: SizedBox(
+                                                          width: 1060,
+                                                          child: DemoPanel(
+                                                              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                                                            Container(
+                                                                color: DemoStyle
+                                                                    .surface2,
+                                                                padding:
+                                                                    const EdgeInsets
+                                                                        .all(
+                                                                        12),
+                                                                child: const _CadRow(
+                                                                    header:
+                                                                        true)),
+                                                            for (final order
+                                                                in orders) ...[
+                                                              const Divider(
+                                                                  height: 1,
+                                                                  color:
+                                                                      DemoStyle
+                                                                          .line),
+                                                              InkWell(
+                                                                  onTap: () =>
+                                                                      openOrder(
+                                                                          order),
+                                                                  child: Padding(
+                                                                      padding: const EdgeInsets
+                                                                          .all(
+                                                                          12),
+                                                                      child: _CadRow(
+                                                                          order:
+                                                                              order,
+                                                                          onView: () =>
+                                                                              openOrder(order)))),
+                                                            ],
+                                                          ]))))))),
+                          if (total > 25)
+                            Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
                                 children: [
-                                  const DemoPageHeading(
-                                      title: 'Orders',
-                                      subtitle:
-                                          'New orders appear in Unassigned. Claim an order to start planning, then complete the plan for clinician review.'),
-                                  const SizedBox(height: 20),
-                                  SingleChildScrollView(
-                                      scrollDirection: Axis.horizontal,
-                                      child: Row(children: [
-                                        for (final tab in _tabs)
-                                          Padding(
-                                              padding: const EdgeInsets.only(
-                                                  right: 8),
-                                              child: ChoiceChip(
-                                                  label: Row(
-                                                      mainAxisSize:
-                                                          MainAxisSize.min,
-                                                      children: [
-                                                        Text(tab.$2),
-                                                        const SizedBox(
-                                                            width: 6),
-                                                        Text(
-                                                            '${overview[tab.$1.isEmpty ? 'all_orders' : tab.$1] ?? '—'}',
-                                                            style: const TextStyle(
-                                                                fontFamily:
-                                                                    'monospace',
-                                                                fontSize: 11)),
-                                                      ]),
-                                                  selected: group == tab.$1,
-                                                  selectedColor:
-                                                      DemoStyle.accent,
-                                                  backgroundColor: Colors.white,
-                                                  labelStyle: TextStyle(
-                                                      color: group == tab.$1
-                                                          ? Colors.white
-                                                          : DemoStyle.ink),
-                                                  side: BorderSide(
-                                                      color: group == tab.$1
-                                                          ? DemoStyle.accent
-                                                          : DemoStyle.line),
-                                                  showCheckmark: false,
-                                                  onSelected: (_) {
-                                                    setState(
-                                                        () => group = tab.$1);
-                                                    page = 1;
-                                                    refresh();
-                                                  })),
-                                      ])),
-                                  const SizedBox(height: 16),
-                                  Row(children: [
-                                    Expanded(
-                                        child: TextField(
-                                            controller: search,
-                                            decoration: InputDecoration(
-                                                prefixIcon:
-                                                    const Icon(Icons.search),
-                                                hintText:
-                                                    'Search patient, clinic or order ID',
-                                                suffixIcon: IconButton(
-                                                    tooltip: 'Search',
-                                                    icon: const Icon(
-                                                        Icons.arrow_forward),
-                                                    onPressed: () {
-                                                      query =
-                                                          search.text.trim();
-                                                      page = 1;
-                                                      refresh();
-                                                    })),
-                                            onSubmitted: (value) {
-                                              query = value.trim();
-                                              page = 1;
+                                  Text('$total orders  •  page $page'),
+                                  IconButton(
+                                      onPressed: page > 1
+                                          ? () {
+                                              page--;
                                               refresh();
-                                            })),
-                                    const SizedBox(width: 10),
-                                    SizedBox(
-                                        width: compact ? 140 : 180,
-                                        child: DropdownButtonFormField<int?>(
-                                            initialValue: clinicId,
-                                            isExpanded: true,
-                                            decoration: const InputDecoration(),
-                                            items: [
-                                              const DropdownMenuItem<int?>(
-                                                  value: null,
-                                                  child: Text('All clinics')),
-                                              for (final clinic in clinics)
-                                                DropdownMenuItem<int?>(
-                                                    value: clinic['id'] as int,
-                                                    child: Text(
-                                                        '${clinic['name']}',
-                                                        overflow: TextOverflow
-                                                            .ellipsis))
-                                            ],
-                                            onChanged: (value) {
-                                              setState(() => clinicId = value);
-                                              page = 1;
+                                            }
+                                          : null,
+                                      icon: const Icon(Icons.chevron_left)),
+                                  IconButton(
+                                      onPressed: page * 25 < total
+                                          ? () {
+                                              page++;
                                               refresh();
-                                            })),
-                                  ]),
-                                  const SizedBox(height: 16),
-                                  if (error != null)
-                                    Text(error!,
-                                        style: const TextStyle(
-                                            color: DemoStyle.danger)),
-                                  Expanded(
-                                      child: loading
-                                          ? const Center(
-                                              child:
-                                                  CircularProgressIndicator())
-                                          : orders.isEmpty
-                                              ? const Center(
-                                                  child: Text(
-                                                      'No matching orders.'))
-                                              : compact
-                                                  ? ListView.separated(
-                                                      itemCount: orders.length,
-                                                      separatorBuilder: (_, __) =>
-                                                          const SizedBox(
-                                                              height: 8),
-                                                      itemBuilder: (_, i) => DemoPanel(
-                                                          child: ListTile(
-                                                              onTap: () => openOrder(
-                                                                  orders[i]),
-                                                              title: Text(
-                                                                  '${orders[i]['order_id']}  •  ${orders[i]['patient_name']}',
-                                                                  style: const TextStyle(
-                                                                      fontWeight:
-                                                                          FontWeight
-                                                                              .w700)),
-                                                              subtitle:
-                                                                  Text('${(orders[i]['clinic'] as Map?)?['name'] ?? ''}  •  ${orderStatusLabel(orders[i]['status'])}'),
-                                                              trailing: const Icon(Icons.chevron_right))))
-                                                  : Align(
-                                                      alignment: Alignment.topCenter,
-                                                      child: SingleChildScrollView(
-                                                          child: SingleChildScrollView(
-                                                              scrollDirection: Axis.horizontal,
-                                                              child: SizedBox(
-                                                                  width: 1060,
-                                                                  child: DemoPanel(
-                                                                      child: Column(mainAxisSize: MainAxisSize.min, children: [
-                                                                    Container(
-                                                                        color: DemoStyle
-                                                                            .surface2,
-                                                                        padding: const EdgeInsets
-                                                                            .all(
-                                                                            12),
-                                                                        child: const _CadRow(
-                                                                            header:
-                                                                                true)),
-                                                                    for (final order
-                                                                        in orders) ...[
-                                                                      const Divider(
-                                                                          height:
-                                                                              1,
-                                                                          color:
-                                                                              DemoStyle.line),
-                                                                      InkWell(
-                                                                          onTap: () => openOrder(
-                                                                              order),
-                                                                          child: Padding(
-                                                                              padding: const EdgeInsets.all(12),
-                                                                              child: _CadRow(order: order, onView: () => openOrder(order)))),
-                                                                    ],
-                                                                  ]))))))),
-                                  if (total > 25)
-                                    Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.end,
-                                        children: [
-                                          Text('$total orders  •  page $page'),
-                                          IconButton(
-                                              onPressed: page > 1
-                                                  ? () {
-                                                      page--;
-                                                      refresh();
-                                                    }
-                                                  : null,
-                                              icon: const Icon(
-                                                  Icons.chevron_left)),
-                                          IconButton(
-                                              onPressed: page * 25 < total
-                                                  ? () {
-                                                      page++;
-                                                      refresh();
-                                                    }
-                                                  : null,
-                                              icon: const Icon(
-                                                  Icons.chevron_right)),
-                                        ]),
-                                ]))))),
-          ]))
-        ]));
+                                            }
+                                          : null,
+                                      icon: const Icon(Icons.chevron_right)),
+                                ]),
+                        ])))));
   }
 }
 
@@ -452,11 +438,14 @@ class _CadRow extends StatelessWidget {
       cell('ORDER', '${data['order_id'] ?? ''}', 13, mono: true),
       cell('PATIENT', '${data['patient_name'] ?? ''}', 14, bold: true),
       cell('CLINIC', '${clinic['name'] ?? ''}', 17,
-          sub: (clinic['clinicians'] as List?)?.map((person) => person['name']).join(', ') ??
+          sub: (clinic['clinicians'] as List?)
+                  ?.map((person) => person['name'])
+                  .join(', ') ??
               clinic['dentist']?.toString()),
       cell('CASE', '', 9),
       cell('UPLOADED', uploaded, 10),
-      cell('ASSIGNEE', '${(data['assigned_planner'] as Map?)?['name'] ?? 'Unassigned'}', 12),
+      cell('ASSIGNEE',
+          '${(data['assigned_planner'] as Map?)?['name'] ?? 'Unassigned'}', 12),
       Expanded(
           flex: 19,
           child: header

@@ -1,9 +1,56 @@
 teams:
   - id: marketing
     labels: Marketing team
+  - id: scanner
+    labels: Scanner team
   - id: planning
     labels: Planning team
   - id: production
     labels: Production team
-  - id: scanner
-    labels: scanner team
+
+# Changes apply to new orders after restarting the API. Keep IDs unique and stable.
+# Extensions include the dot. min_files is required unless allow_text is true
+# and written requirements are supplied.
+scanner_checklist:
+  - id: upper_arch
+    label: Upper arch STL
+    mandatory: true
+    min_files: 1
+    extensions: [.stl, .pdf, .jpg, .jpeg, .png]
+    allow_text: false
+  - id: lower_arch
+    label: Lower arch STL
+    mandatory: true
+    min_files: 1
+    extensions: [.stl, .pdf, .jpg, .jpeg, .png]
+    allow_text: false
+  - id: bite
+    label: Bite registration
+    mandatory: true
+    min_files: 1
+    extensions: [.stl, .pdf, .jpg, .jpeg, .png]
+    allow_text: false
+  - id: intraoral
+    label: Intraoral photos (5)
+    mandatory: true
+    min_files: 5
+    extensions: [.stl, .pdf, .jpg, .jpeg, .png]
+    allow_text: false
+  - id: extraoral
+    label: Extraoral photos (3)
+    mandatory: true
+    min_files: 3
+    extensions: [.stl, .pdf, .jpg, .jpeg, .png]
+    allow_text: false
+  - id: opg
+    label: OPG X-ray
+    mandatory: true
+    min_files: 1
+    extensions: [.stl, .pdf, .jpg, .jpeg, .png]
+    allow_text: false
+  - id: requirements
+    label: Treatment requirements
+    mandatory: true
+    min_files: 1
+    extensions: [.stl, .pdf, .jpg, .jpeg, .png]
+    allow_text: true
