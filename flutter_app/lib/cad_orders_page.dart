@@ -6,8 +6,10 @@ import 'qc_orders_page.dart';
 
 const _tabs = <(String, String)>[
   ('', 'All orders'),
-  ('plan_pending', 'Plan pending'),
-  ('clinical_approval_pending', 'Clinical approval pending'),
+  ('plan_pending', 'Unassigned'),
+  ('planning_in_progress', 'Planning in progress'),
+  ('mine', 'My orders'),
+  ('clinical_approval_pending', 'Clinician review pending'),
   ('issue_raised', 'Issue raised'),
   ('approved', 'Approved'),
   ('cancelled', 'Cancelled'),
@@ -70,7 +72,8 @@ class _CadOrdersPageState extends State<CadOrdersPage> {
           Uri(path: '/api/orders', queryParameters: {
             'page': '$page',
             'limit': '25',
-            if (group.isNotEmpty) 'status_group': group,
+            if (group.isNotEmpty && group != 'mine') 'status_group': group,
+            if (group == 'mine') 'mine': 'true',
             if (query.isNotEmpty) 'q': query,
             if (clinicId != null) 'clinic_id': '$clinicId',
           }).toString());
@@ -94,7 +97,8 @@ class _CadOrdersPageState extends State<CadOrdersPage> {
             builder: (_) => OrderDetailPage(
                 api: widget.api,
                 orderId: order['order_id'] as String,
-                role: 'planning')));
+                role: 'planning',
+                userId: widget.user['id'] as int)));
     refreshOverview();
     refresh();
   }
@@ -212,7 +216,7 @@ class _CadOrdersPageState extends State<CadOrdersPage> {
                                   const DemoPageHeading(
                                       title: 'Orders',
                                       subtitle:
-                                          'Every order submitted by the Marketing team appears here with status Plan pending. Open an order to review documents, update its status and leave comments.'),
+                                          'New orders appear in Unassigned. Claim an order to start planning, then complete the plan for clinician review.'),
                                   const SizedBox(height: 20),
                                   SingleChildScrollView(
                                       scrollDirection: Axis.horizontal,
@@ -337,7 +341,7 @@ class _CadOrdersPageState extends State<CadOrdersPage> {
                                                                           FontWeight
                                                                               .w700)),
                                                               subtitle:
-                                                                  Text('${(orders[i]['clinic'] as Map?)?['name'] ?? ''}  •  ${_cadStatus(orders[i]['status'])}'),
+                                                                  Text('${(orders[i]['clinic'] as Map?)?['name'] ?? ''}  •  ${orderStatusLabel(orders[i]['status'])}'),
                                                               trailing: const Icon(Icons.chevron_right))))
                                                   : Align(
                                                       alignment: Alignment.topCenter,
@@ -403,14 +407,6 @@ class _CadOrdersPageState extends State<CadOrdersPage> {
   }
 }
 
-String _cadStatus(Object? status) => switch (status) {
-      'submitted' => 'Plan pending',
-      'plan_completed' => 'Clinical approval pending',
-      'clinician_issues' => 'Issue raised',
-      'cancelled' => 'Cancelled',
-      _ => 'Approved',
-    };
-
 class _CadRow extends StatelessWidget {
   final bool header;
   final Map<String, dynamic>? order;
@@ -460,13 +456,14 @@ class _CadRow extends StatelessWidget {
               clinic['dentist']?.toString()),
       cell('CASE', '', 9),
       cell('UPLOADED', uploaded, 10),
+      cell('ASSIGNEE', '${(data['assigned_planner'] as Map?)?['name'] ?? 'Unassigned'}', 12),
       Expanded(
           flex: 19,
           child: header
               ? _heading('STATUS')
               : Align(
                   alignment: Alignment.centerLeft,
-                  child: _CadPill(_cadStatus(status)))),
+                  child: _CadPill(orderStatusLabel(status)))),
       cell('DOCS · COMMENTS', '$docs docs · $comments comments', 18),
       SizedBox(
           width: 68,
@@ -511,12 +508,12 @@ class _CadPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = label == 'Cancelled'
         ? const Color(0xFFB3261E)
-        : label == 'Approved'
+        : {'Clinician approved', 'QC approved'}.contains(label)
             ? const Color(0xFF1B7F4B)
             : DemoStyle.muted;
     final background = label == 'Cancelled'
         ? const Color(0xFFFCE4E2)
-        : label == 'Approved'
+        : {'Clinician approved', 'QC approved'}.contains(label)
             ? const Color(0xFFDCF2E5)
             : DemoStyle.surface2;
     return Container(

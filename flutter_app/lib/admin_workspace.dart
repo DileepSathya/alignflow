@@ -317,8 +317,11 @@ class _AdminOrdersViewState extends State<AdminOrdersView> {
                                     value: 'submitted',
                                     child: Text('Submitted')),
                                 DropdownMenuItem(
+                                    value: 'planning_in_progress',
+                                    child: Text('Planning in progress')),
+                                DropdownMenuItem(
                                     value: 'plan_completed',
-                                    child: Text('Plan pending')),
+                                    child: Text('Clinician review pending')),
                                 DropdownMenuItem(
                                     value: 'clinician_issues',
                                     child: Text('Clinical issues')),
@@ -559,7 +562,7 @@ class _AdminOrderRow extends StatelessWidget {
           ? 'green'
           : 'blue';
   static String _currentStatusLabel(String status) => switch (status) {
-        'plan_completed' => 'Plan pending',
+        'plan_completed' => 'Clinician review pending',
         'qc_approved' || 'manufacture_completed' => 'Manufacture completed',
         _ => orderStatusLabel(status),
       };

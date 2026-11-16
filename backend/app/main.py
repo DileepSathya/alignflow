@@ -440,12 +440,12 @@ class StatusInput(BaseModel):
     status: str
 
 
-ORDER_STEPS = ["submitted", "plan_completed", "clinician_issues", "clinician_approved",
+ORDER_STEPS = ["submitted", "planning_in_progress", "plan_completed", "clinician_issues", "clinician_approved",
                "manufacturing_in_process", "manufactured", "qc_issues", "qc_approved"]
 STATUS_ROLES = {"plan_completed": "planning", "clinician_approved": "marketing",
                 "manufacturing_in_process": "production", "manufactured": "production",
                 "qc_approved": "planning"}
-VISIBLE_PRODUCTION_STEPS = ORDER_STEPS[3:] + ["manufacture_completed"]  # Legacy completed orders.
+VISIBLE_PRODUCTION_STEPS = ORDER_STEPS[4:] + ["manufacture_completed"]  # Legacy completed orders.
 QC_VISIBLE_STEPS = ["manufactured", "qc_issues", "qc_approved", "manufacture_completed"]
 
 
@@ -610,11 +610,15 @@ def marketing_performance(year: int, month: int, user=Depends(admin_user), conn=
 
 @app.get("/api/orders")
 def list_orders(q: str = "", status_filter: str = "", status_group: str = "", view: str = "",
-                clinic_id: int | None = None, page: int = 1, limit: int = 25,
+                clinic_id: int | None = None, page: int = 1, limit: int = 25, mine: bool = False,
                 user=Depends(current_user)):
     if page < 1 or not 1 <= limit <= 100:
         raise HTTPException(status_code=400, detail="Invalid page or limit")
     query = {}
+    if mine and user["role"] != "planning":
+        raise HTTPException(status_code=403, detail="Planning team only")
+    if mine:
+        query["assigned_planner.id"] = user["id"]
     if view:
         if view != "qc" or user["role"] != "planning":
             raise HTTPException(status_code=403, detail="QC view is restricted")
@@ -624,6 +628,7 @@ def list_orders(q: str = "", status_filter: str = "", status_group: str = "", vi
     if status_group:
         cad_groups = {
             "plan_pending": ["submitted"],
+            "planning_in_progress": ["planning_in_progress"],
             "clinical_approval_pending": ["plan_completed"],
             "issue_raised": ["clinician_issues"],
             "approved": ["clinician_approved", "manufacturing_in_process", "manufactured", "qc_issues",
@@ -693,6 +698,7 @@ def cad_overview(user=Depends(current_user)):
                ])]
     return {"all_orders": sum(statuses.values()),
             "plan_pending": statuses.get("submitted", 0),
+            "planning_in_progress": statuses.get("planning_in_progress", 0),
             "clinical_approval_pending": statuses.get("plan_completed", 0),
             "issue_raised": statuses.get("clinician_issues", 0),
             "approved": sum(statuses.get(key, 0) for key in
@@ -770,7 +776,7 @@ def admin_overview(admin=Depends(admin_user), conn=Depends(connection)):
         users = cur.fetchone()["count"]
     return {"total_orders": sum(statuses.values()), "users": users,
             "in_plan": sum(statuses.get(key, 0) for key in
-                           ("submitted", "plan_completed", "clinician_issues")),
+                           ("submitted", "planning_in_progress", "plan_completed", "clinician_issues")),
             "in_manufacturing": statuses.get("clinician_approved", 0) +
                                 statuses.get("manufacturing_in_process", 0),
             "in_qc": statuses.get("manufactured", 0) + statuses.get("qc_issues", 0),
@@ -856,6 +862,8 @@ def resolve_issue(order_id: str, issue_id: str, user=Depends(current_user)):
     if issue is None:
         raise HTTPException(status_code=404, detail="Issue not found")
     target_team = issue["raised_to"]
+    if target_team in {"cad", "planning"} and doc.get("assigned_planner") and (doc.get("assigned_planner") or {}).get("id") != user["id"]:
+        raise HTTPException(status_code=403, detail="Only the assigned planner can resolve feedback")
     canonical_team = {"lab": "production", "cad": "planning"}.get(target_team, target_team)
     issue_status = "qc_issues" if canonical_team == "production" else "clinician_issues"
     return_status = "manufactured" if canonical_team == "production" else "plan_completed"
@@ -878,14 +886,30 @@ def resolve_issue(order_id: str, issue_id: str, user=Depends(current_user)):
     return {"order": public_order(updated)}
 
 
+@app.post("/api/orders/{order_id}/assign")
+def assign_order(order_id: str, user=Depends(current_user)):
+    if user["role"] != "planning":
+        raise HTTPException(status_code=403, detail="Planning team only")
+    timestamp = now()
+    updated = order_store().find_one_and_update(
+        {"order_id": order_id, "status": "submitted", "assigned_planner": None},
+        {"$set": {"status": "planning_in_progress", "assigned_planner": {"id": user["id"], "name": user["name"]}, "assigned_at": timestamp, "updated_at": timestamp},
+         "$push": {"history": {"status": "planning_in_progress", "at": timestamp, "by": user["name"]}}},
+        return_document=ReturnDocument.AFTER)
+    if updated is None:
+        raise HTTPException(status_code=409, detail="Order already assigned or unavailable")
+    return {"order": public_order(updated)}
+
 @app.post("/api/orders/{order_id}/status")
 def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
     doc = get_order(order_id, user)
     target = body.status
+    if target == "plan_completed" and doc["status"] == "planning_in_progress" and (doc.get("assigned_planner") or {}).get("id") != user["id"]:
+        raise HTTPException(status_code=403, detail="Only the assigned planner can complete the plan")
     if target == "cancelled":
         if user["role"] != "marketing":
             raise HTTPException(status_code=403, detail="Marketing team only")
-        if doc["status"] not in ORDER_STEPS[:3]:
+        if doc["status"] not in ORDER_STEPS[:4]:
             raise HTTPException(status_code=409, detail="Order cannot be cancelled after clinician approval")
     else:
         legacy_review_reset = (target == "plan_completed" and doc["status"] == "clinician_issues"
@@ -893,7 +917,7 @@ def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
         if not legacy_review_reset and (target not in STATUS_ROLES or user["role"] != STATUS_ROLES[target]):
             raise HTTPException(status_code=403, detail="Team cannot set this status")
         allowed = (legacy_review_reset or
-                   (doc["status"] == "submitted" and target == "plan_completed") or
+                   (doc["status"] == "planning_in_progress" and target == "plan_completed") or
                    (doc["status"] == "plan_completed" and target == "clinician_approved") or
                    (doc["status"], target) in {
                        ("clinician_approved", "manufacturing_in_process"),
@@ -907,8 +931,14 @@ def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
         if target == "qc_approved" and any(issue["resolved_at"] is None for issue in doc["issues"]):
             raise HTTPException(status_code=409, detail="Resolve QC issues before approval")
     timestamp = now()
-    updated = order_store().find_one_and_update({"order_id": order_id, "status": doc["status"]},
-        {"$set": {"status": target, "updated_at": timestamp}, "$push": {"history": {
+    guard = {"order_id": order_id, "status": doc["status"]}
+    if target == "plan_completed" and doc["status"] == "planning_in_progress":
+        guard["assigned_planner.id"] = user["id"]
+    update_fields = {"status": target, "updated_at": timestamp}
+    if target == "plan_completed" and doc["status"] == "planning_in_progress":
+        update_fields["plan_completed_at"] = timestamp
+    updated = order_store().find_one_and_update(guard,
+        {"$set": update_fields, "$push": {"history": {
             "status": target, "at": timestamp, "by": user["name"]}}},
         return_document=ReturnDocument.AFTER)
     if updated is None:

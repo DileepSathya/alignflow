@@ -7,7 +7,8 @@ import 'demo_style.dart';
 
 const _statuses = <String, String>{
   'submitted': 'Submitted by marketing team',
-  'plan_completed': 'Clinical approval pending',
+  'planning_in_progress': 'Planning in progress',
+  'plan_completed': 'Clinician review pending',
   'clinician_issues': 'Clinician raised issues',
   'clinician_approved': 'Clinician approved',
   'manufacturing_in_process': 'Manufacturing in process',
@@ -23,7 +24,9 @@ String orderStatusLabel(Object? status) =>
 
 const _progressSteps = <(String, String)>[
   ('submitted', 'Submitted by marketing team'),
-  ('plan_completed', 'Clinical approval pending'),
+  ('planning_in_progress', 'Planning in progress'),
+  ('plan_completed', 'Plan completed'),
+  ('plan_completed', 'Clinician review pending'),
   ('clinician_issues', 'Clinician raised issues'),
   ('clinician_approved', 'Clinician approved'),
   ('manufacturing_in_process', 'Manufacturing in process'),
@@ -641,12 +644,14 @@ class OrderDetailPage extends StatefulWidget {
   final Api api;
   final String orderId;
   final String role;
+  final int? userId;
   final bool qcMode;
   const OrderDetailPage(
       {super.key,
       required this.api,
       required this.orderId,
       this.role = 'marketing',
+      this.userId,
       this.qcMode = false});
   @override
   State<OrderDetailPage> createState() => _OrderDetailPageState();
@@ -1079,7 +1084,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                     child: const Text('Raise issue'))),
                         ])),
                 if (widget.role == 'marketing' &&
-                    ['submitted', 'plan_completed', 'clinician_issues']
+                    ['submitted', 'planning_in_progress', 'plan_completed', 'clinician_issues']
                         .contains(data['status']))
                   Align(
                       alignment: Alignment.centerLeft,
@@ -1092,7 +1097,12 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                   {'status': 'cancelled'}),
                           icon: const Icon(Icons.cancel_outlined),
                           label: const Text('Cancel order'))),
+                if (data['assigned_planner'] != null)
+                  Text('Planner: ${data['assigned_planner']['name']}'),
                 if (widget.role == 'planning' && !widget.qcMode && data['status'] == 'submitted')
+                  FilledButton(onPressed: busy ? null : () => action('POST', '/api/orders/${widget.orderId}/assign', {}), child: const Text('Assign to me')),
+                if (widget.role == 'planning' && !widget.qcMode && data['status'] == 'planning_in_progress' &&
+                    (data['assigned_planner'] as Map?)?['id'] == widget.userId)
                   FilledButton(
                       onPressed: busy
                           ? null
