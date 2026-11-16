@@ -23,6 +23,7 @@ class MarketingPage extends StatefulWidget {
 class _MarketingPageState extends State<MarketingPage> {
   final search = TextEditingController();
   List<Map<String, dynamic>> clinics = [];
+  final Set<int> expandedClinicIds = {};
   bool loading = true;
   String? error;
   String section = 'Orders';
@@ -222,9 +223,9 @@ class _MarketingPageState extends State<MarketingPage> {
         .where((c) => [
               c['clinic_name'],
               c['area'],
-              ...((c['clinicians'] as List?) ?? []).map((person) => person['name'])
-            ]
-            .any((v) => (v?.toString().toLowerCase() ?? '').contains(query)))
+              ...((c['clinicians'] as List?) ?? [])
+                  .map((person) => person['name'])
+            ].any((v) => (v?.toString().toLowerCase() ?? '').contains(query)))
         .toList();
     return Scaffold(
       drawer: narrow ? Drawer(child: sidebar(compact: true)) : null,
@@ -307,59 +308,46 @@ class _MarketingPageState extends State<MarketingPage> {
                                                   separatorBuilder: (_, __) =>
                                                       const SizedBox(height: 8),
                                                   itemBuilder: (_, i) => Card(
-                                                      child: InkWell(
-                                                          onLongPress: () =>
-                                                              showActions(
-                                                                  visible[i]),
-                                                          child: Padding(
-                                                              padding:
-                                                                  const EdgeInsets.all(
-                                                                      16),
-                                                              child: Column(
-                                                                  crossAxisAlignment:
-                                                                      CrossAxisAlignment
-                                                                          .start,
-                                                                  children: [
-                                                                    Text(
-                                                                        visible[i]['clinic_name']
-                                                                            as String,
-                                                                        style: const TextStyle(
-                                                                            fontWeight:
-                                                                                FontWeight.bold,
-                                                                            fontSize: 16)),
-                                                                    Text(
-                                                                        'Clinicians: ${((visible[i]['clinicians'] as List?) ?? []).map((person) => person['name']).join(', ')}'),
-                                                                    Text(
-                                                                        'Contact: ${visible[i]['contact_number']}'),
-                                                                    if (visible[i]
-                                                                            [
-                                                                            'email'] !=
-                                                                        null)
-                                                                      Text(visible[i]
+                                                          child: ExpansionTile(
+                                                              key: ValueKey(
+                                                                  visible[i]
+                                                                      ['id']),
+                                                              leading: Icon(expandedClinicIds.contains(visible[i]['id'])
+                                                                  ? Icons.remove
+                                                                  : Icons.add),
+                                                              onExpansionChanged:
+                                                                  (value) =>
+                                                                      setState(
+                                                                          () {
+                                                                        if (value) {
+                                                                          expandedClinicIds.add(visible[i]['id']
+                                                                              as int);
+                                                                        } else {
+                                                                          expandedClinicIds.remove(visible[i]
                                                                               [
-                                                                              'email']
-                                                                          as String),
-                                                                    Text(
-                                                                        'Area: ${visible[i]['area']}'),
-                                                                    const SizedBox(
-                                                                        height:
-                                                                            4),
-                                                                    const Text(
-                                                                        'Long press for actions',
-                                                                        style: TextStyle(
-                                                                            fontSize:
-                                                                                11,
-                                                                            color:
-                                                                                Colors.grey)),
-                                                                  ])))))
+                                                                              'id']);
+                                                                        }
+                                                                      }),
+                                                              title: Text(visible[i]
+                                                                      ['clinic_name']
+                                                                  as String),
+                                                              subtitle:
+                                                                  Text('${visible[i]['contact_number']} • ${visible[i]['area']}'),
+                                                              children: [
+                                                            _clinicianDetails(
+                                                                visible[i]['clinicians']
+                                                                        as List? ??
+                                                                    []),
+                                                            TextButton(
+                                                                onPressed: () =>
+                                                                    showActions(
+                                                                        visible[
+                                                                            i]),
+                                                                child: const Text(
+                                                                    'Edit or delete clinic')),
+                                                          ])))
                                               : Container(
-                                                  decoration: BoxDecoration(
-                                                      color: Colors.white,
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                              12),
-                                                      border:
-                                                          Border.all(color: const Color(0xFFDFE8EB))),
+                                                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFDFE8EB))),
                                                   child: Column(children: [
                                                     Container(
                                                         height: 40,
@@ -399,6 +387,7 @@ class _MarketingPageState extends State<MarketingPage> {
                                                                 const Divider(
                                                                     height: 1),
                                                             itemBuilder: (_, i) => ClinicRow(
+                                                                key: ValueKey(visible[i]['id']),
                                                                 clinic:
                                                                     visible[i],
                                                                 onEdit: () => edit(
@@ -429,53 +418,94 @@ class ClinicRow extends StatefulWidget {
 
 class _ClinicRowState extends State<ClinicRow> {
   bool hovered = false;
+  bool expanded = false;
   @override
   Widget build(BuildContext context) => MouseRegion(
       onEnter: (_) => setState(() => hovered = true),
       onExit: (_) => setState(() => hovered = false),
-      child: Container(
-          height: 62,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          color: hovered ? const Color(0xFFF7FAFA) : Colors.white,
-          child: Row(children: [
-            Expanded(
-                flex: 3,
-                child: Text(widget.clinic['clinic_name'] as String,
-                    style: const TextStyle(fontWeight: FontWeight.w600))),
-            Expanded(
-                flex: 2,
-                child: Text(((widget.clinic['clinicians'] as List?) ?? [])
-                    .map((person) => person['name'])
-                    .join(', '))),
-            Expanded(
-                flex: 3,
-                child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(widget.clinic['contact_number'] as String),
-                      if (widget.clinic['email'] != null)
-                        Text(widget.clinic['email'] as String,
-                            style: const TextStyle(
-                                fontSize: 11, color: Colors.grey)),
-                    ])),
-            Expanded(flex: 2, child: Text(widget.clinic['area'] as String)),
-            SizedBox(
-                width: 92,
-                child: hovered
-                    ? Row(children: [
+      child: Column(children: [
+        InkWell(
+            onTap: () => setState(() => expanded = !expanded),
+            child: Container(
+                height: 62,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                color: hovered ? const Color(0xFFF7FAFA) : Colors.white,
+                child: Row(children: [
+                  Expanded(
+                      flex: 3,
+                      child: Row(children: [
                         IconButton(
-                            tooltip: 'Edit clinic',
-                            icon: const Icon(Icons.edit_outlined, size: 19),
-                            onPressed: widget.onEdit),
-                        IconButton(
-                            tooltip: 'Delete clinic',
-                            icon: const Icon(Icons.delete_outline, size: 19),
-                            onPressed: widget.onDelete),
-                      ])
-                    : null),
-          ])));
+                            tooltip: expanded
+                                ? 'Collapse clinicians'
+                                : 'Expand clinicians',
+                            icon: Icon(expanded ? Icons.remove : Icons.add),
+                            onPressed: () =>
+                                setState(() => expanded = !expanded)),
+                        Expanded(
+                            child: Text(widget.clinic['clinic_name'] as String,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w600))),
+                      ])),
+                  Expanded(
+                      flex: 2,
+                      child: Text(
+                          '${((widget.clinic['clinicians'] as List?) ?? []).length} clinicians')),
+                  Expanded(
+                      flex: 3,
+                      child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(widget.clinic['contact_number'] as String),
+                            if (widget.clinic['email'] != null)
+                              Text(widget.clinic['email'] as String,
+                                  style: const TextStyle(
+                                      fontSize: 11, color: Colors.grey)),
+                          ])),
+                  Expanded(
+                      flex: 2, child: Text(widget.clinic['area'] as String)),
+                  SizedBox(
+                      width: 92,
+                      child: hovered
+                          ? Row(children: [
+                              IconButton(
+                                  tooltip: 'Edit clinic',
+                                  icon:
+                                      const Icon(Icons.edit_outlined, size: 19),
+                                  onPressed: widget.onEdit),
+                              IconButton(
+                                  tooltip: 'Delete clinic',
+                                  icon: const Icon(Icons.delete_outline,
+                                      size: 19),
+                                  onPressed: widget.onDelete),
+                            ])
+                          : null),
+                ]))),
+        if (expanded)
+          _clinicianDetails(widget.clinic['clinicians'] as List? ?? []),
+      ]));
 }
+
+Widget _clinicianDetails(List clinicians) => Padding(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+      child: clinicians.isEmpty
+          ? const Align(
+              alignment: Alignment.centerLeft,
+              child: Text('No clinicians added yet.'))
+          : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              for (final person in clinicians)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  child: Wrap(spacing: 16, runSpacing: 4, children: [
+                    Text(person['name']?.toString() ?? '—',
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    Text(person['mobile_number']?.toString() ?? '—'),
+                    if (person['email'] != null)
+                      Text(person['email'].toString()),
+                  ]),
+                ),
+            ]),
+    );
 
 class ClinicDialog extends StatefulWidget {
   final Api api;
@@ -491,7 +521,8 @@ class _ClinicianFields {
   final mobile = TextEditingController();
   final email = TextEditingController();
 
-  _ClinicianFields([Map<String, dynamic>? value]) : id = value?['clinician_id'] as int? {
+  _ClinicianFields([Map<String, dynamic>? value])
+      : id = value?['clinician_id'] as int? {
     name.text = value?['name'] as String? ?? '';
     mobile.text = value?['mobile_number'] as String? ?? '';
     email.text = value?['email'] as String? ?? '';
@@ -552,7 +583,8 @@ class _ClinicDialogState extends State<ClinicDialog> {
     for (final clinician in clinicians) {
       if (clinician.name.text.trim().isEmpty ||
           clinician.mobile.text.trim().isEmpty) {
-        setState(() => error = 'Complete each clinician name and mobile number.');
+        setState(
+            () => error = 'Complete each clinician name and mobile number.');
         return;
       }
       final address = clinician.email.text.trim();
@@ -577,7 +609,8 @@ class _ClinicDialogState extends State<ClinicDialog> {
             'contact_number': contact.text.trim(),
             'email': email.text.trim(),
             'area': area.text.trim(),
-            'clinicians': clinicians.map((clinician) => clinician.toJson()).toList(),
+            'clinicians':
+                clinicians.map((clinician) => clinician.toJson()).toList(),
           });
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -630,7 +663,8 @@ class _ClinicDialogState extends State<ClinicDialog> {
                       Expanded(
                           child: TextField(
                               controller: clinician.name,
-                              decoration: const InputDecoration(labelText: 'Name'))),
+                              decoration:
+                                  const InputDecoration(labelText: 'Name'))),
                       IconButton(
                           tooltip: 'Remove clinician',
                           icon: const Icon(Icons.delete_outline),
@@ -643,15 +677,18 @@ class _ClinicDialogState extends State<ClinicDialog> {
                     TextField(
                         controller: clinician.mobile,
                         keyboardType: TextInputType.phone,
-                        decoration: const InputDecoration(labelText: 'Mobile number')),
+                        decoration:
+                            const InputDecoration(labelText: 'Mobile number')),
                     const SizedBox(height: 8),
                     TextField(
                         controller: clinician.email,
                         keyboardType: TextInputType.emailAddress,
-                        decoration: const InputDecoration(labelText: 'Email (optional)')),
+                        decoration: const InputDecoration(
+                            labelText: 'Email (optional)')),
                   ],
                   TextButton.icon(
-                      onPressed: () => setState(() => clinicians.add(_ClinicianFields())),
+                      onPressed: () =>
+                          setState(() => clinicians.add(_ClinicianFields())),
                       icon: const Icon(Icons.add),
                       label: const Text('Add clinician')),
                   if (error != null)
