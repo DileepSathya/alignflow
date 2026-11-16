@@ -115,12 +115,36 @@ class UserUpdate(UserInput):
     password: str | None = None
 
 
+class ClinicianInput(BaseModel):
+    clinician_id: int | None = None
+    name: str = Field(min_length=1)
+    mobile_number: str = Field(min_length=1)
+    email: str | None = None
+
+    @field_validator("name", "mobile_number")
+    @classmethod
+    def required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("This field is required")
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def optional_email(cls, value: str | None) -> str | None:
+        value = value.strip() if value else None
+        if value and ("@" not in value or "." not in value.split("@")[-1]):
+            raise ValueError("Enter a valid email address")
+        return value or None
+
+
 class ClinicInput(BaseModel):
     clinic_name: str = Field(min_length=1)
     dentist_name: str = Field(min_length=1)
     contact_number: str = Field(min_length=1)
     email: str | None = None
     area: str = Field(min_length=1)
+    clinicians: list[ClinicianInput] | None = None
 
     @field_validator("clinic_name", "dentist_name", "contact_number", "area")
     @classmethod
@@ -268,18 +292,60 @@ def delete_user(user_id: int, admin=Depends(admin_user), conn=Depends(connection
 def list_clinics(user=Depends(marketing_user), conn=Depends(connection)):
     with conn.cursor() as cur:
         cur.execute("SELECT * FROM clinics ORDER BY clinic_name, id")
-        return {"clinics": cur.fetchall()}
+        clinics = cur.fetchall()
+        cur.execute("SELECT * FROM clinicians ORDER BY clinician_id")
+        clinicians = cur.fetchall()
+    by_clinic = {clinic["id"]: [] for clinic in clinics}
+    for clinician in clinicians:
+        if clinician["clinic_id"] in by_clinic:
+            by_clinic[clinician["clinic_id"]].append(clinician)
+    for clinic in clinics:
+        clinic["clinicians"] = by_clinic[clinic["id"]]
+    return {"clinics": clinics}
+
+
+def save_clinicians(cur, clinic_id: int, clinicians: list[ClinicianInput]):
+    ids = [person.clinician_id for person in clinicians if person.clinician_id is not None]
+    if len(ids) != len(set(ids)):
+        raise HTTPException(status_code=400, detail="Duplicate clinician ID")
+    if ids:
+        cur.execute("SELECT clinician_id FROM clinicians WHERE clinic_id = %s AND clinician_id = ANY(%s)",
+                    (clinic_id, ids))
+        if {row["clinician_id"] for row in cur.fetchall()} != set(ids):
+            raise HTTPException(status_code=400, detail="Clinician does not belong to this clinic")
+    for person in clinicians:
+        if person.clinician_id is None:
+            cur.execute("INSERT INTO clinicians (name, mobile_number, email, clinic_id) "
+                        "VALUES (%s, %s, %s, %s)",
+                        (person.name, person.mobile_number, person.email, clinic_id))
+        else:
+            cur.execute("UPDATE clinicians SET name = %s, mobile_number = %s, email = %s "
+                        "WHERE clinician_id = %s AND clinic_id = %s",
+                        (person.name, person.mobile_number, person.email, person.clinician_id, clinic_id))
+    cur.execute("DELETE FROM clinicians WHERE clinic_id = %s AND NOT (clinician_id = ANY(%s))",
+                (clinic_id, ids))
+
+
+def clinic_with_clinicians(cur, clinic: dict) -> dict:
+    cur.execute("SELECT * FROM clinicians WHERE clinic_id = %s ORDER BY clinician_id", (clinic["id"],))
+    clinic["clinicians"] = cur.fetchall()
+    return clinic
 
 
 @app.post("/api/clinics", status_code=status.HTTP_201_CREATED)
 def create_clinic(body: ClinicInput, user=Depends(marketing_user), conn=Depends(connection)):
+    if body.clinicians and any(person.clinician_id is not None for person in body.clinicians):
+        raise HTTPException(status_code=400, detail="New clinicians cannot have an ID")
     with conn.cursor() as cur:
         cur.execute(
             "INSERT INTO clinics (clinic_name, dentist_name, contact_number, email, area, created_by) "
             "VALUES (%s, %s, %s, %s, %s, %s) RETURNING *",
             (body.clinic_name, body.dentist_name, body.contact_number, body.email, body.area, user["id"]),
         )
-        return {"clinic": cur.fetchone()}
+        clinic = cur.fetchone()
+        if body.clinicians is not None:
+            save_clinicians(cur, clinic["id"], body.clinicians)
+        return {"clinic": clinic_with_clinicians(cur, clinic)}
 
 
 @app.put("/api/clinics/{clinic_id}")
@@ -291,9 +357,11 @@ def update_clinic(clinic_id: int, body: ClinicInput, user=Depends(marketing_user
             (body.clinic_name, body.dentist_name, body.contact_number, body.email, body.area, clinic_id),
         )
         clinic = cur.fetchone()
-    if clinic is None:
-        raise HTTPException(status_code=404, detail="Clinic not found")
-    return {"clinic": clinic}
+        if clinic is None:
+            raise HTTPException(status_code=404, detail="Clinic not found")
+        if body.clinicians is not None:
+            save_clinicians(cur, clinic_id, body.clinicians)
+        return {"clinic": clinic_with_clinicians(cur, clinic)}
 
 
 @app.delete("/api/clinics/{clinic_id}", status_code=204)

@@ -30,6 +30,15 @@ CREATE TABLE IF NOT EXISTS clinics (
 ALTER TABLE clinics ADD COLUMN IF NOT EXISTS created_by BIGINT REFERENCES users(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS clinics_created_by_idx ON clinics (created_by);
 
+CREATE TABLE IF NOT EXISTS clinicians (
+    clinician_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name TEXT NOT NULL,
+    mobile_number TEXT NOT NULL,
+    email TEXT,
+    clinic_id BIGINT NOT NULL REFERENCES clinics(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS clinicians_clinic_id_idx ON clinicians (clinic_id);
+
 -- Change this password before the app is accessible to anyone else.
 INSERT INTO users (username, password, name, role)
 VALUES ('admin', 'admin', 'Admin', 'admin')

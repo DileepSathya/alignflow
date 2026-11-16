@@ -478,7 +478,37 @@ class ClinicDialog extends StatefulWidget {
   State<ClinicDialog> createState() => _ClinicDialogState();
 }
 
+class _ClinicianFields {
+  final int? id;
+  final name = TextEditingController();
+  final mobile = TextEditingController();
+  final email = TextEditingController();
+
+  _ClinicianFields([Map<String, dynamic>? value]) : id = value?['clinician_id'] as int? {
+    name.text = value?['name'] as String? ?? '';
+    mobile.text = value?['mobile_number'] as String? ?? '';
+    email.text = value?['email'] as String? ?? '';
+  }
+
+  Map<String, dynamic> toJson() => {
+        if (id != null) 'clinician_id': id,
+        'name': name.text.trim(),
+        'mobile_number': mobile.text.trim(),
+        'email': email.text.trim(),
+      };
+
+  void dispose() {
+    name.dispose();
+    mobile.dispose();
+    email.dispose();
+  }
+}
+
 class _ClinicDialogState extends State<ClinicDialog> {
+  late final List<_ClinicianFields> clinicians =
+      ((widget.clinic?['clinicians'] as List?) ?? [])
+          .map((value) => _ClinicianFields(value as Map<String, dynamic>))
+          .toList();
   late final name = TextEditingController(
       text: widget.clinic?['clinic_name'] as String? ?? '');
   late final dentist = TextEditingController(
@@ -499,6 +529,9 @@ class _ClinicDialogState extends State<ClinicDialog> {
     contact.dispose();
     email.dispose();
     area.dispose();
+    for (final clinician in clinicians) {
+      clinician.dispose();
+    }
     super.dispose();
   }
 
@@ -511,6 +544,19 @@ class _ClinicDialogState extends State<ClinicDialog> {
         !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email.text.trim())) {
       setState(() => error = 'Enter a valid email address.');
       return;
+    }
+    for (final clinician in clinicians) {
+      if (clinician.name.text.trim().isEmpty ||
+          clinician.mobile.text.trim().isEmpty) {
+        setState(() => error = 'Complete each clinician name and mobile number.');
+        return;
+      }
+      final address = clinician.email.text.trim();
+      if (address.isNotEmpty &&
+          !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(address)) {
+        setState(() => error = 'Enter a valid clinician email address.');
+        return;
+      }
     }
     setState(() {
       saving = true;
@@ -528,6 +574,7 @@ class _ClinicDialogState extends State<ClinicDialog> {
             'contact_number': contact.text.trim(),
             'email': email.text.trim(),
             'area': area.text.trim(),
+            'clinicians': clinicians.map((clinician) => clinician.toJson()).toList(),
           });
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -575,6 +622,38 @@ class _ClinicDialogState extends State<ClinicDialog> {
                       controller: area,
                       decoration:
                           const InputDecoration(labelText: 'Area / city')),
+                  const SizedBox(height: 18),
+                  Text('Clinicians', style: Theme.of(context).textTheme.titleMedium),
+                  for (final clinician in clinicians) ...[
+                    const SizedBox(height: 12),
+                    Row(children: [
+                      Expanded(
+                          child: TextField(
+                              controller: clinician.name,
+                              decoration: const InputDecoration(labelText: 'Name'))),
+                      IconButton(
+                          tooltip: 'Remove clinician',
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => setState(() {
+                                clinicians.remove(clinician);
+                                clinician.dispose();
+                              }))
+                    ]),
+                    const SizedBox(height: 8),
+                    TextField(
+                        controller: clinician.mobile,
+                        keyboardType: TextInputType.phone,
+                        decoration: const InputDecoration(labelText: 'Mobile number')),
+                    const SizedBox(height: 8),
+                    TextField(
+                        controller: clinician.email,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: const InputDecoration(labelText: 'Email (optional)')),
+                  ],
+                  TextButton.icon(
+                      onPressed: () => setState(() => clinicians.add(_ClinicianFields())),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Add clinician')),
                   if (error != null)
                     Padding(
                         padding: const EdgeInsets.only(top: 12),
