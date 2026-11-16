@@ -1,13 +1,6 @@
 import 'package:flutter/material.dart';
 import 'api.dart';
 
-const roles = {
-  'marketing': 'Marketing',
-  'cad': 'Clinical CAD',
-  'lab': 'Lab / Manufacturing',
-  'qc': 'QC',
-};
-
 class AdminPage extends StatefulWidget {
   final Api api;
   final Map<String, dynamic> user;
@@ -27,6 +20,7 @@ class AdminPage extends StatefulWidget {
 
 class _AdminPageState extends State<AdminPage> {
   List<Map<String, dynamic>> users = [];
+  List<Map<String, dynamic>> teams = [];
   bool loading = true;
   String? error;
 
@@ -39,9 +33,11 @@ class _AdminPageState extends State<AdminPage> {
   Future<void> refresh() async {
     try {
       final data = await widget.api.request('GET', '/api/users');
+      final config = await widget.api.request('GET', '/api/teams');
       if (mounted) {
         setState(() {
           users = (data['users'] as List).cast<Map<String, dynamic>>();
+          teams = (config['teams'] as List).cast<Map<String, dynamic>>();
           error = null;
         });
         widget.onUsersChanged?.call();
@@ -56,14 +52,14 @@ class _AdminPageState extends State<AdminPage> {
   Future<void> create() async {
     final created = await showDialog<bool>(
         context: context,
-        builder: (context) => CreateUserDialog(api: widget.api));
+        builder: (context) => CreateUserDialog(api: widget.api, teams: teams));
     if (created == true) refresh();
   }
 
   Future<void> edit(Map<String, dynamic> user) async {
     final updated = await showDialog<bool>(
         context: context,
-        builder: (context) => CreateUserDialog(api: widget.api, user: user));
+        builder: (context) => CreateUserDialog(api: widget.api, user: user, teams: teams));
     if (updated == true) refresh();
   }
 
@@ -164,7 +160,7 @@ class _AdminPageState extends State<AdminPage> {
                                                 title: Text(
                                                     user['name'] as String),
                                                 subtitle: Text(
-                                                    '${user['username']}  •  ${roles[user['role']] ?? 'Admin'}'),
+                                                    '${user['username']}  •  ${teams.where((team) => team['id'] == user['role']).map((team) => team['labels']).firstOrNull ?? 'Admin'}'),
                                                 trailing: user['role'] ==
                                                         'admin'
                                                     ? const Text('Built-in')
@@ -201,7 +197,8 @@ class _AdminPageState extends State<AdminPage> {
 class CreateUserDialog extends StatefulWidget {
   final Api api;
   final Map<String, dynamic>? user;
-  const CreateUserDialog({super.key, required this.api, this.user});
+  final List<Map<String, dynamic>> teams;
+  const CreateUserDialog({super.key, required this.api, required this.teams, this.user});
   @override
   State<CreateUserDialog> createState() => _CreateUserDialogState();
 }
@@ -287,9 +284,9 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
               DropdownButtonFormField<String>(
                   initialValue: role,
                   decoration: const InputDecoration(labelText: 'Team role'),
-                  items: roles.entries
+                  items: widget.teams
                       .map((entry) => DropdownMenuItem(
-                          value: entry.key, child: Text(entry.value)))
+                          value: entry['id'] as String, child: Text(entry['labels'] as String)))
                       .toList(),
                   onChanged: (value) => setState(() => role = value)),
               if (error != null)

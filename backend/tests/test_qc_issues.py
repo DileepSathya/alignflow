@@ -42,36 +42,36 @@ class QcIssueTests(unittest.TestCase):
             self.addCleanup(item.stop)
 
     def raise_qc_issue(self):
-        return main.add_issue("ORD-000001", main.IssueInput(text="Remake tray", raised_to="lab"),
-                              user={"role": "qc", "name": "Reviewer"})
+        return main.add_issue("ORD-000001", main.IssueInput(text="Remake tray", raised_to="production"),
+                              user={"role": "planning", "name": "Reviewer"})
 
     def test_qc_issue_routes_to_lab_and_blocks_approval(self):
         self.raise_qc_issue()
         self.assertEqual(self.order["status"], "qc_issues")
-        self.assertEqual(self.order["issues"][0]["raised_to"], "lab")
+        self.assertEqual(self.order["issues"][0]["raised_to"], "production")
         with self.assertRaises(HTTPException) as caught:
             main.change_status("ORD-000001", main.StatusInput(status="qc_approved"),
-                               user={"role": "qc", "name": "Reviewer"})
+                               user={"role": "planning", "name": "Reviewer"})
         self.assertEqual(caught.exception.status_code, 409)
 
     def test_only_lab_resolves_qc_issue_and_order_returns_to_qc(self):
         self.raise_qc_issue()
         issue_id = self.order["issues"][0]["id"]
-        for role in ("qc", "cad", "marketing", "admin"):
+        for role in ("planning", "marketing", "admin"):
             with self.subTest(role=role), self.assertRaises(HTTPException) as caught:
                 main.resolve_issue("ORD-000001", issue_id, user={"role": role, "name": role})
             self.assertEqual(caught.exception.status_code, 403)
-        main.resolve_issue("ORD-000001", issue_id, user={"role": "lab", "name": "Maker"})
+        main.resolve_issue("ORD-000001", issue_id, user={"role": "production", "name": "Maker"})
         self.assertEqual(self.order["status"], "manufactured")
         self.assertIsNotNone(self.order["issues"][0]["resolved_at"])
         main.change_status("ORD-000001", main.StatusInput(status="qc_approved"),
-                           user={"role": "qc", "name": "Reviewer"})
+                           user={"role": "planning", "name": "Reviewer"})
         self.assertEqual(self.order["status"], "qc_approved")
 
     def test_qc_can_only_raise_at_manufactured_stage_for_lab(self):
         with self.assertRaises(HTTPException) as caught:
-            main.add_issue("ORD-000001", main.IssueInput(text="Wrong team", raised_to="cad"),
-                           user={"role": "qc", "name": "Reviewer"})
+            main.add_issue("ORD-000001", main.IssueInput(text="Wrong team", raised_to="planning"),
+                           user={"role": "planning", "name": "Reviewer"})
         self.assertEqual(caught.exception.status_code, 409)
         self.order["status"] = "qc_approved"
         with self.assertRaises(HTTPException) as caught:
@@ -80,23 +80,23 @@ class QcIssueTests(unittest.TestCase):
 
     def test_qc_approval_is_final(self):
         main.change_status("ORD-000001", main.StatusInput(status="qc_approved"),
-                           user={"role": "qc", "name": "Reviewer"})
+                           user={"role": "planning", "name": "Reviewer"})
         with self.assertRaises(HTTPException) as caught:
             main.change_status("ORD-000001", main.StatusInput(status="manufacture_completed"),
-                               user={"role": "lab", "name": "Maker"})
+                               user={"role": "production", "name": "Maker"})
         self.assertEqual(caught.exception.status_code, 403)
         self.assertEqual(self.order["status"], "qc_approved")
 
     def test_lab_cannot_raise_and_marketing_flow_still_works(self):
         with self.assertRaises(HTTPException) as caught:
-            main.add_issue("ORD-000001", main.IssueInput(text="Problem", raised_to="lab"),
-                           user={"role": "lab", "name": "Maker"})
+            main.add_issue("ORD-000001", main.IssueInput(text="Problem", raised_to="production"),
+                           user={"role": "production", "name": "Maker"})
         self.assertEqual(caught.exception.status_code, 403)
         self.order["status"] = "plan_completed"
-        main.add_issue("ORD-000001", main.IssueInput(text="Clinician feedback", raised_to="cad"),
+        main.add_issue("ORD-000001", main.IssueInput(text="Clinician feedback", raised_to="planning"),
                        user={"role": "marketing", "name": "Marketer"})
         self.assertEqual(self.order["status"], "clinician_issues")
-        self.assertEqual(self.order["issues"][0]["raised_to"], "cad")
+        self.assertEqual(self.order["issues"][0]["raised_to"], "planning")
 
 
 if __name__ == "__main__":

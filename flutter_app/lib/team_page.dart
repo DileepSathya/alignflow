@@ -3,11 +3,10 @@ import 'api.dart';
 import 'demo_style.dart';
 import 'orders_page.dart';
 
-const teamNames = {'cad': 'Clinical CAD', 'lab': 'Lab / Manufacturing', 'qc': 'QC'};
+const teamNames = {'planning': 'Planning team', 'production': 'Production team'};
 const teamDescriptions = {
-  'cad': 'Review submitted cases, prepare plans and handle clinician feedback.',
-  'lab': 'Orders approved by the clinic and assigned by the CAD team appear here.',
-  'qc': 'Review manufactured orders and record quality decisions.',
+  'planning': 'Review submitted cases, prepare plans and handle clinician feedback.',
+  'production': 'Orders approved by the clinic and assigned by the Planning team appear here.',
 };
 class TeamPage extends StatefulWidget {
   final Api api;

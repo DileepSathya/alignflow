@@ -6,7 +6,6 @@ import 'demo_style.dart';
 import 'team_page.dart';
 import 'cad_orders_page.dart';
 import 'lab_orders_page.dart';
-import 'qc_orders_page.dart';
 
 void main() => runApp(const AlignFlowApp());
 
@@ -48,12 +47,10 @@ class _AlignFlowAppState extends State<AlignFlowApp> {
                 ? AdminWorkspace(api: api, user: user!, onLogout: () => setState(() => user = null))
                 : user!['role'] == 'marketing'
                 ? MarketingPage(api: api, user: user!, onLogout: () => setState(() => user = null))
-                : user!['role'] == 'cad'
+                : user!['role'] == 'planning'
                 ? CadOrdersPage(api: api, user: user!, onLogout: () => setState(() => user = null))
-                : user!['role'] == 'lab'
+                : user!['role'] == 'production'
                 ? LabOrdersPage(api: api, user: user!, onLogout: () => setState(() => user = null))
-                : user!['role'] == 'qc'
-                ? QcOrdersPage(api: api, user: user!, onLogout: () => setState(() => user = null))
                 : TeamPage(user: user!, api: api, onLogout: () => setState(() => user = null)),
   );
 }

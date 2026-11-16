@@ -51,7 +51,7 @@ class LabWorkflowTests(unittest.TestCase):
         with patch.object(main, "get_order", return_value=order), \
              patch.object(main, "order_store", return_value=store), \
              patch.object(main, "public_order", side_effect=lambda value: value):
-            user = {"role": "lab", "name": "Maker"}
+            user = {"role": "production", "name": "Maker"}
             with self.assertRaises(HTTPException) as caught:
                 main.change_status(order["order_id"], main.StatusInput(status="manufactured"), user=user)
             self.assertEqual(caught.exception.status_code, 409)
@@ -64,9 +64,9 @@ class LabWorkflowTests(unittest.TestCase):
     def test_overview_and_status_filter(self):
         store = _Orders()
         with patch.object(main, "order_store", return_value=store):
-            overview = main.lab_overview(user={"role": "lab"})
+            overview = main.lab_overview(user={"role": "production"})
             main.list_orders(status_group="manufacturing_completed", clinic_id=3,
-                             user={"role": "lab"})
+                             user={"role": "production"})
         self.assertEqual(overview["all_orders"], 4)
         self.assertEqual(overview["manufacturing_in_process"], 1)
         self.assertEqual(overview["manufacturing_completed"], 2)
@@ -76,7 +76,7 @@ class LabWorkflowTests(unittest.TestCase):
     def test_qc_queue_excludes_manufacturing_in_process(self):
         store = _Orders()
         with patch.object(main, "order_store", return_value=store):
-            main.list_orders(user={"role": "qc"})
+            main.list_orders(view="qc", user={"role": "planning"})
         self.assertNotIn("manufacturing_in_process", store.last_query["status"]["$in"])
 
 

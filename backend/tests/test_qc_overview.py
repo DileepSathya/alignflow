@@ -36,26 +36,26 @@ class _Orders:
 class QcOverviewTests(unittest.TestCase):
     def test_counts_pending_resolved_and_completed(self):
         with patch.object(main, "order_store", return_value=_Orders()):
-            result = main.qc_overview(user={"role": "qc"})
+            result = main.qc_overview(user={"role": "planning"})
         self.assertEqual(result["all_orders"], 5)
         self.assertEqual(result["qc_approval_pending"], 1)
-        self.assertEqual(result["issue_raised"], 1)
-        self.assertEqual(result["issue_resolved"], 1)
-        self.assertEqual(result["approval_completed"], 2)
+        self.assertEqual(result["qc_issue_raised"], 1)
+        self.assertEqual(result["qc_issue_resolved"], 1)
+        self.assertEqual(result["qc_approval_completed"], 2)
         self.assertEqual(result["clinics"], [{"id": 3, "name": "ABC clinic"}])
 
     def test_resolved_filter_uses_issue_history_and_clinic(self):
         orders = _Orders()
         with patch.object(main, "order_store", return_value=orders):
-            main.list_orders(status_group="issue_resolved", clinic_id=3,
-                             user={"role": "qc"})
+            main.list_orders(status_group="qc_issue_resolved", clinic_id=3,
+                             user={"role": "planning"})
         self.assertEqual(orders.last_query["clinic_id"], 3)
         self.assertEqual(orders.last_query["status"], {"$in": ["manufactured"]})
-        self.assertEqual(orders.last_query["issues"]["$elemMatch"]["raised_to"], "lab")
+        self.assertEqual(orders.last_query["issues"]["$elemMatch"]["raised_to"], {"$in": ["production", "lab"]})
 
     def test_other_roles_cannot_read_qc_overview(self):
         with self.assertRaises(HTTPException) as caught:
-            main.qc_overview(user={"role": "lab"})
+            main.qc_overview(user={"role": "production"})
         self.assertEqual(caught.exception.status_code, 403)
 
 

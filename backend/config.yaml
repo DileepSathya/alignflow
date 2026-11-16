@@ -1,0 +1,7 @@
+teams:
+  - id: marketing
+    labels: Marketing team
+  - id: planning
+    labels: Planning team
+  - id: production
+    labels: Production team

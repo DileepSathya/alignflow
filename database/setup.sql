@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(30) NOT NULL UNIQUE,
     password TEXT NOT NULL,
     name TEXT NOT NULL,
-    role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'marketing', 'cad', 'lab', 'qc')),
+    role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'marketing', 'planning', 'production')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

@@ -641,11 +641,13 @@ class OrderDetailPage extends StatefulWidget {
   final Api api;
   final String orderId;
   final String role;
+  final bool qcMode;
   const OrderDetailPage(
       {super.key,
       required this.api,
       required this.orderId,
-      this.role = 'marketing'});
+      this.role = 'marketing',
+      this.qcMode = false});
   @override
   State<OrderDetailPage> createState() => _OrderDetailPageState();
 }
@@ -717,11 +719,11 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
   }
 
   Future<void> raiseIssue() async {
-    final isQc = widget.role == 'qc';
+    final isQc = widget.qcMode;
     final details = await showDialog<({String text, List<PlatformFile> files})>(
         context: context,
         builder: (_) =>
-            RaiseIssueDialog(targetTeam: isQc ? 'Lab / Manufacturing' : 'CAD'));
+            RaiseIssueDialog(targetTeam: isQc ? 'Production team' : 'Planning team'));
     if (details == null || !mounted) return;
     setState(() {
       busy = true;
@@ -732,7 +734,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
     String? submissionError;
     try {
       await widget.api.request('POST', '/api/orders/${widget.orderId}/issues',
-          {'text': details.text, 'raised_to': isQc ? 'lab' : 'cad'});
+          {'text': details.text, 'raised_to': isQc ? 'production' : 'planning'});
       issueCreated = true;
       for (final file in details.files) {
         await widget.api.uploadOrderFile(widget.orderId, file);
@@ -1049,13 +1051,13 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                             ListTile(
                                 title: Text(item['text'] as String),
                                 subtitle: Text(
-                                    '${item['by']} → ${item['raised_to'] == 'lab' ? 'Lab / Manufacturing' : 'Clinical CAD'} • ${item['resolved_at'] == null ? 'Open' : 'Resolved'}'),
-                                trailing: ((widget.role == 'cad' &&
-                                                item['raised_to'] == 'cad' &&
+                                    '${item['by']} → ${['lab', 'production'].contains(item['raised_to']) ? 'Production team' : 'Planning team'} • ${item['resolved_at'] == null ? 'Open' : 'Resolved'}'),
+                                trailing: ((widget.role == 'planning' &&
+                                                ['cad', 'planning'].contains(item['raised_to']) &&
                                                 data['status'] ==
                                                     'clinician_issues') ||
-                                            (widget.role == 'lab' &&
-                                                item['raised_to'] == 'lab' &&
+                                            (widget.role == 'production' &&
+                                                ['lab', 'production'].contains(item['raised_to']) &&
                                                 data['status'] ==
                                                     'qc_issues')) &&
                                         item['resolved_at'] == null
@@ -1068,7 +1070,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                     : null),
                           if ((widget.role == 'marketing' &&
                                   data['status'] == 'plan_completed') ||
-                              (widget.role == 'qc' &&
+                              (widget.qcMode &&
                                   data['status'] == 'manufactured'))
                             Align(
                                 alignment: Alignment.centerRight,
@@ -1090,7 +1092,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                   {'status': 'cancelled'}),
                           icon: const Icon(Icons.cancel_outlined),
                           label: const Text('Cancel order'))),
-                if (widget.role == 'cad' && data['status'] == 'submitted')
+                if (widget.role == 'planning' && !widget.qcMode && data['status'] == 'submitted')
                   FilledButton(
                       onPressed: busy
                           ? null
@@ -1120,7 +1122,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                               '/api/orders/${widget.orderId}/status',
                               {'status': 'plan_completed'}),
                       child: const Text('Return to clinical review')),
-                if (widget.role == 'lab' &&
+                if (widget.role == 'production' &&
                     data['status'] == 'clinician_approved')
                   FilledButton(
                       onPressed: busy
@@ -1130,7 +1132,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                               '/api/orders/${widget.orderId}/status',
                               {'status': 'manufacturing_in_process'}),
                       child: const Text('Start manufacturing')),
-                if (widget.role == 'lab' &&
+                if (widget.role == 'production' &&
                     data['status'] == 'manufacturing_in_process')
                   FilledButton(
                       onPressed: busy
@@ -1140,7 +1142,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                               '/api/orders/${widget.orderId}/status',
                               {'status': 'manufactured'}),
                       child: const Text('Send to QC')),
-                if (widget.role == 'qc' && data['status'] == 'manufactured')
+                if (widget.qcMode && data['status'] == 'manufactured')
                   FilledButton(
                       onPressed: busy
                           ? null

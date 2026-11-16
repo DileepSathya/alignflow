@@ -6,9 +6,9 @@ import 'orders_page.dart';
 const _qcTabs = <(String, String)>[
   ('', 'All orders'),
   ('qc_approval_pending', 'QC approval pending'),
-  ('issue_raised', 'Issue raised'),
-  ('issue_resolved', 'Issue resolved'),
-  ('approval_completed', 'Approval completed'),
+  ('qc_issue_raised', 'Issue raised'),
+  ('qc_issue_resolved', 'Issue resolved'),
+  ('qc_approval_completed', 'Approval completed'),
 ];
 
 class QcOrdersPage extends StatefulWidget {
@@ -29,7 +29,7 @@ class _QcOrdersPageState extends State<QcOrdersPage> {
   final search = TextEditingController();
   List<Map<String, dynamic>> orders = [];
   Map<String, dynamic> overview = {};
-  String group = '', query = '';
+  String group = 'qc_approval_pending', query = '';
   int? clinicId;
   int page = 1, total = 0;
   bool loading = true;
@@ -68,6 +68,7 @@ class _QcOrdersPageState extends State<QcOrdersPage> {
           Uri(path: '/api/orders', queryParameters: {
             'page': '$page',
             'limit': '25',
+            'view': 'qc',
             if (group.isNotEmpty) 'status_group': group,
             if (query.isNotEmpty) 'q': query,
             if (clinicId != null) 'clinic_id': '$clinicId',
@@ -92,7 +93,7 @@ class _QcOrdersPageState extends State<QcOrdersPage> {
             builder: (_) => OrderDetailPage(
                 api: widget.api,
                 orderId: order['order_id'] as String,
-                role: 'qc')));
+                role: 'planning', qcMode: true)));
     refreshOverview();
     refresh();
   }
@@ -138,14 +139,14 @@ class _QcOrdersPageState extends State<QcOrdersPage> {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                             fontSize: 12, fontWeight: FontWeight.w700)),
-                    const Text('QC team',
+                    const Text('Planning team',
                         style: TextStyle(fontSize: 11, color: DemoStyle.muted)),
                   ]))
             ])),
         const SizedBox(height: 24),
         ListTile(
             dense: true,
-            selected: true,
+            selected: false,
             selectedTileColor: DemoStyle.accentSoft,
             shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
@@ -154,6 +155,10 @@ class _QcOrdersPageState extends State<QcOrdersPage> {
                 size: 19, color: DemoStyle.accent),
             title: const Text('Orders',
                 style: TextStyle(fontSize: 13, color: DemoStyle.accent)),
+            onTap: () {
+              if (compact) Navigator.of(context).pop();
+              Navigator.of(context).pop();
+            },
             trailing: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
@@ -161,11 +166,21 @@ class _QcOrdersPageState extends State<QcOrdersPage> {
                     borderRadius: BorderRadius.circular(20)),
                 child: Text('${overview['all_orders'] ?? '—'}',
                     style: const TextStyle(fontSize: 11)))),
+        ListTile(
+            dense: true,
+            selected: true,
+            selectedTileColor: DemoStyle.accentSoft,
+            leading: const Icon(Icons.fact_check_outlined, size: 19),
+            title: const Text('QC', style: TextStyle(fontSize: 13))),
         const Spacer(),
         const Divider(),
         OutlinedButton(
             onPressed: () async {
               await widget.api.logout();
+              if (mounted) {
+                if (compact) Navigator.of(context).pop();
+                Navigator.of(context).pop();
+              }
               widget.onLogout();
             },
             child: const Text('Log out')),
@@ -184,7 +199,7 @@ class _QcOrdersPageState extends State<QcOrdersPage> {
             if (compact)
               Builder(
                   builder: (context) => AppBar(
-                      title: const Text('Orders'),
+                      title: const Text('QC'),
                       leading: IconButton(
                           icon: const Icon(Icons.menu),
                           onPressed: () => Scaffold.of(context).openDrawer()))),
@@ -198,7 +213,7 @@ class _QcOrdersPageState extends State<QcOrdersPage> {
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
                                   const DemoPageHeading(
-                                      title: 'Orders',
+                                      title: 'QC',
                                       subtitle:
                                           'Orders sent to you by the manufacturing team. Open an order to review it, then approve it or raise an issue.'),
                                   const SizedBox(height: 20),
@@ -398,7 +413,7 @@ String _qcStatus(Map<String, dynamic> order) {
     final issues = (order['issues'] as List?) ?? [];
     return issues.any((issue) =>
             issue is Map &&
-            issue['raised_to'] == 'lab' &&
+            ['lab', 'production'].contains(issue['raised_to']) &&
             issue['resolved_at'] != null)
         ? 'Issue resolved'
         : 'QC approval pending';

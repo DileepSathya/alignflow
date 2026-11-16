@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'demo_style.dart';
 import 'orders_page.dart';
+import 'qc_orders_page.dart';
 
 const _tabs = <(String, String)>[
   ('', 'All orders'),
@@ -93,7 +94,7 @@ class _CadOrdersPageState extends State<CadOrdersPage> {
             builder: (_) => OrderDetailPage(
                 api: widget.api,
                 orderId: order['order_id'] as String,
-                role: 'cad')));
+                role: 'planning')));
     refreshOverview();
     refresh();
   }
@@ -139,7 +140,7 @@ class _CadOrdersPageState extends State<CadOrdersPage> {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                             fontSize: 12, fontWeight: FontWeight.w700)),
-                    const Text('Clinical CAD team',
+                    const Text('Planning team',
                         style: TextStyle(fontSize: 11, color: DemoStyle.muted)),
                   ]))
             ])),
@@ -162,6 +163,16 @@ class _CadOrdersPageState extends State<CadOrdersPage> {
                     borderRadius: BorderRadius.circular(20)),
                 child: Text('${overview['all_orders'] ?? '—'}',
                     style: const TextStyle(fontSize: 11)))),
+        ListTile(
+            dense: true,
+            leading: const Icon(Icons.fact_check_outlined, size: 19),
+            title: const Text('QC', style: TextStyle(fontSize: 13)),
+            onTap: () {
+              if (compact) Navigator.of(context).pop();
+              Navigator.push(context, MaterialPageRoute(builder: (_) =>
+                  QcOrdersPage(api: widget.api, user: widget.user,
+                      onLogout: widget.onLogout)));
+            }),
         const Spacer(),
         const Divider(),
         OutlinedButton(

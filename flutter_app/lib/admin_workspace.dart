@@ -260,7 +260,7 @@ class _AdminOrdersViewState extends State<AdminOrdersView> {
                     const DemoPageHeading(
                         title: 'All orders',
                         subtitle:
-                            'Every order across Marketing, Clinical CAD, Lab and QC, with its full details and current status.'),
+                            'Every order across Marketing, Planning and Production, including QC work, with its full details and current status.'),
                     const SizedBox(height: 20),
                     SizedBox(
                         height: 82,

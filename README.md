@@ -70,3 +70,9 @@ The Android SDK needs NDK `28.2.13676358`. It is installed in the current local 
 The database setup seeds `admin` / `admin`. Change this password before sharing the app. This prototype stores passwords as plain text and uses HTTP on the local network; it is not ready for production credentials. The admin can create Marketing, Clinical CAD, Lab/Manufacturing, and QC users. Their team workspaces are planned for a later phase.
 
 
+# Team configuration
+
+Edit `backend/config.yaml` to change the team labels and their order in the admin user dropdown. Keep the IDs `marketing`, `planning`, and `production`: the API permissions and order workflow use these IDs. Restart the backend after editing the file. The built-in `admin` role is not a team option. Planning contains both Orders and QC; QC opens on the approval-pending queue.
+
+On backend startup, existing users with the former `cad`, `lab`, and `qc` roles are migrated to `planning`, `production`, and `planning`, respectively. Existing QC issue records remain readable and resolvable.
+

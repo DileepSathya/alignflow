@@ -93,7 +93,7 @@ class _LabOrdersPageState extends State<LabOrdersPage> {
             builder: (_) => OrderDetailPage(
                 api: widget.api,
                 orderId: order['order_id'] as String,
-                role: 'lab')));
+                role: 'production')));
     refreshOverview();
     refresh();
   }
@@ -139,7 +139,7 @@ class _LabOrdersPageState extends State<LabOrdersPage> {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                             fontSize: 12, fontWeight: FontWeight.w700)),
-                    const Text('Lab & Manufacturing team',
+                    const Text('Production team',
                         style: TextStyle(fontSize: 11, color: DemoStyle.muted)),
                   ]))
             ])),
@@ -201,7 +201,7 @@ class _LabOrdersPageState extends State<LabOrdersPage> {
                                   const DemoPageHeading(
                                       title: 'Orders',
                                       subtitle:
-                                          'Orders approved by the clinic and assigned by the CAD team appear here. Start manufacturing, then send the order to QC.'),
+                                          'Orders approved by the clinic and assigned by the Planning team appear here. Start manufacturing, then send the order to QC.'),
                                   const SizedBox(height: 20),
                                   SingleChildScrollView(
                                       scrollDirection: Axis.horizontal,
@@ -441,9 +441,9 @@ class _LabRow extends StatelessWidget {
                                   fontSize: 11, color: DemoStyle.muted)),
                       ]));
     return Row(children: [
-      cell('ASSIGNED BY', assignedBy.isEmpty ? 'Clinical CAD team' : assignedBy,
+      cell('ASSIGNED BY', assignedBy.isEmpty ? 'Planning team' : assignedBy,
           27,
-          sub: 'Clinical CAD team', bold: true),
+          sub: 'Planning team', bold: true),
       cell('ORDER ID', '${data['order_id'] ?? ''}', 25,
           sub: data['patient_name']?.toString(), mono: true),
       cell('CLINIC', '${clinic['name'] ?? ''}', 26),

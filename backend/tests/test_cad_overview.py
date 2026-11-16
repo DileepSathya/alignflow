@@ -36,7 +36,7 @@ class _Orders:
 class CadOverviewTests(unittest.TestCase):
     def test_status_counts_and_clinics(self):
         with patch.object(main, "order_store", return_value=_Orders()):
-            result = main.cad_overview(user={"role": "cad"})
+            result = main.cad_overview(user={"role": "planning"})
         self.assertEqual(result["all_orders"], 5)
         self.assertEqual(result["plan_pending"], 1)
         self.assertEqual(result["approved"], 2)
@@ -52,7 +52,7 @@ class CadOverviewTests(unittest.TestCase):
         orders = _Orders()
         with patch.object(main, "order_store", return_value=orders):
             main.list_orders(status_group="approved", clinic_id=3,
-                             user={"role": "cad"})
+                             user={"role": "planning"})
         self.assertEqual(orders.last_query["clinic_id"], 3)
         self.assertIn("qc_approved", orders.last_query["status"]["$in"])
 

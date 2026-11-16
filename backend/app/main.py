@@ -17,6 +17,7 @@ from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.responses import JSONResponse
 from gridfs import GridFS
 from urllib.parse import quote
+import yaml
 from app.order_storage import save_upload, storage_path
 
 
@@ -30,6 +31,23 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+TEAM_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config.yaml"
+
+
+def load_teams():
+    teams = yaml.safe_load(TEAM_CONFIG_PATH.read_text(encoding="utf-8"))["teams"]
+    ids = [team["id"] for team in teams]
+    if set(ids) != {"marketing", "planning", "production"} or len(ids) != 3 or any(
+        not isinstance(team.get("id"), str) or not isinstance(team.get("labels"), str)
+        or not team["id"] or not team["labels"].strip() or team["id"] == "admin"
+        for team in teams
+    ):
+        raise ValueError("Invalid config.yaml teams")
+    return teams
+
+
+TEAMS = load_teams()
+TEAM_IDS = {team["id"] for team in TEAMS}
 mongo = MongoClient(settings.mongodb_url, serverSelectionTimeoutMS=3000)[settings.mongodb_database]
 orders = mongo.orders
 files = GridFS(mongo)
@@ -84,6 +102,13 @@ def migrate_clinic_attribution():
             cur.execute("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS created_by BIGINT "
                         "REFERENCES users(id) ON DELETE SET NULL")
             cur.execute("CREATE INDEX IF NOT EXISTS clinics_created_by_idx ON clinics (created_by)")
+            cur.execute("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check")
+            cur.execute("UPDATE users SET role = CASE role "
+                        "WHEN 'cad' THEN 'planning' WHEN 'lab' THEN 'production' "
+                        "WHEN 'qc' THEN 'planning' ELSE role END "
+                        "WHERE role IN ('cad', 'lab', 'qc')")
+            cur.execute("ALTER TABLE users ADD CONSTRAINT users_role_check "
+                        "CHECK (role IN ('admin', 'marketing', 'planning', 'production'))")
 
 
 class LoginInput(BaseModel):
@@ -108,7 +133,7 @@ class UserInput(BaseModel):
     @field_validator("role")
     @classmethod
     def valid_role(cls, value: str) -> str:
-        if value not in {"marketing", "cad", "lab", "qc"}:
+        if value not in TEAM_IDS:
             raise ValueError("Choose a valid team role")
         return value
 
@@ -234,6 +259,11 @@ def list_users(admin=Depends(admin_user), conn=Depends(connection)):
     with conn.cursor() as cur:
         cur.execute("SELECT id, username, name, role, created_at FROM users ORDER BY created_at DESC, id DESC")
         return {"users": cur.fetchall()}
+
+
+@app.get("/api/teams")
+def list_teams(admin=Depends(admin_user)):
+    return {"teams": TEAMS}
 
 
 @app.post("/api/users", status_code=status.HTTP_201_CREATED)
@@ -403,7 +433,7 @@ class CommentInput(BaseModel):
 
 class IssueInput(BaseModel):
     text: str = Field(min_length=1, max_length=5000)
-    raised_to: str = Field(default="cad", pattern=r"^(marketing|cad|lab|qc)$")
+    raised_to: str = Field(default="planning", pattern=r"^(planning|production)$")
 
 
 class StatusInput(BaseModel):
@@ -412,9 +442,9 @@ class StatusInput(BaseModel):
 
 ORDER_STEPS = ["submitted", "plan_completed", "clinician_issues", "clinician_approved",
                "manufacturing_in_process", "manufactured", "qc_issues", "qc_approved"]
-STATUS_ROLES = {"plan_completed": "cad", "clinician_approved": "marketing",
-                "manufacturing_in_process": "lab", "manufactured": "lab",
-                "qc_approved": "qc"}
+STATUS_ROLES = {"plan_completed": "planning", "clinician_approved": "marketing",
+                "manufacturing_in_process": "production", "manufactured": "production",
+                "qc_approved": "planning"}
 VISIBLE_PRODUCTION_STEPS = ORDER_STEPS[3:] + ["manufacture_completed"]  # Legacy completed orders.
 QC_VISIBLE_STEPS = ["manufactured", "qc_issues", "qc_approved", "manufacture_completed"]
 
@@ -441,9 +471,8 @@ def public_order(doc):
 
 def get_order(order_id: str, user: dict):
     doc = order_store().find_one({"order_id": order_id})
-    visible = QC_VISIBLE_STEPS if user["role"] == "qc" else VISIBLE_PRODUCTION_STEPS
-    if doc is None or (user["role"] in {"lab", "qc"} and
-                       doc["status"] not in visible):
+    if doc is None or (user["role"] == "production" and
+                       doc["status"] not in VISIBLE_PRODUCTION_STEPS):
         raise HTTPException(status_code=404, detail="Order not found")
     return doc
 
@@ -580,15 +609,18 @@ def marketing_performance(year: int, month: int, user=Depends(admin_user), conn=
 
 
 @app.get("/api/orders")
-def list_orders(q: str = "", status_filter: str = "", status_group: str = "",
+def list_orders(q: str = "", status_filter: str = "", status_group: str = "", view: str = "",
                 clinic_id: int | None = None, page: int = 1, limit: int = 25,
                 user=Depends(current_user)):
     if page < 1 or not 1 <= limit <= 100:
         raise HTTPException(status_code=400, detail="Invalid page or limit")
     query = {}
-    if user["role"] in {"lab", "qc"}:
-        query["status"] = {"$in": QC_VISIBLE_STEPS if user["role"] == "qc"
-                           else VISIBLE_PRODUCTION_STEPS}
+    if view:
+        if view != "qc" or user["role"] != "planning":
+            raise HTTPException(status_code=403, detail="QC view is restricted")
+        query["status"] = {"$in": QC_VISIBLE_STEPS}
+    if user["role"] == "production":
+        query["status"] = {"$in": VISIBLE_PRODUCTION_STEPS}
     if status_group:
         cad_groups = {
             "plan_pending": ["submitted"],
@@ -607,31 +639,30 @@ def list_orders(q: str = "", status_filter: str = "", status_group: str = "",
         }
         qc_groups = {
             "qc_approval_pending": ["manufactured"],
-            "issue_raised": ["qc_issues"],
-            "issue_resolved": ["manufactured"],
-            "approval_completed": ["qc_approved", "manufacture_completed"],
+            "qc_issue_raised": ["qc_issues"],
+            "qc_issue_resolved": ["manufactured"],
+            "qc_approval_completed": ["qc_approved", "manufacture_completed"],
         }
-        groups = (cad_groups if user["role"] == "cad" else
-                  lab_groups if user["role"] == "lab" else
-                  qc_groups if user["role"] == "qc" else {})
+        groups = ({**cad_groups, **qc_groups} if user["role"] == "planning" else
+                  lab_groups if user["role"] == "production" else {})
         if status_group not in groups:
             raise HTTPException(status_code=400, detail="Invalid status group")
         query["status"] = {"$in": groups[status_group]}
-        resolved_issue = {"raised_to": "lab", "resolved_at": {"$ne": None}}
-        if user["role"] == "qc" and status_group == "issue_resolved":
+        resolved_issue = {"raised_to": {"$in": ["production", "lab"]}, "resolved_at": {"$ne": None}}
+        if user["role"] == "planning" and status_group == "qc_issue_resolved":
             query["issues"] = {"$elemMatch": resolved_issue}
-        elif user["role"] == "qc" and status_group == "qc_approval_pending":
+        elif user["role"] == "planning" and status_group == "qc_approval_pending":
             query["issues"] = {"$not": {"$elemMatch": resolved_issue}}
     if clinic_id is not None:
-        if user["role"] not in {"cad", "lab", "qc"}:
+        if user["role"] not in {"planning", "production"}:
             raise HTTPException(status_code=403, detail="Team cannot filter clinics")
         query["clinic_id"] = clinic_id
     if status_filter:
         if status_group:
             raise HTTPException(status_code=400, detail="Choose one status filter")
-        if user["role"] in {"lab", "qc"}:
+        if user["role"] == "production":
             matching = ["qc_approved", "manufacture_completed"] if status_filter == "qc_approved" else [status_filter]
-            visible = QC_VISIBLE_STEPS if user["role"] == "qc" else VISIBLE_PRODUCTION_STEPS
+            visible = VISIBLE_PRODUCTION_STEPS
             query["status"] = {"$in": matching if status_filter in visible else []}
         else:
             query["status"] = {"$in": ["qc_approved", "manufacture_completed"]} if status_filter == "qc_approved" else status_filter
@@ -648,8 +679,8 @@ def list_orders(q: str = "", status_filter: str = "", status_group: str = "",
 
 @app.get("/api/cad/overview")
 def cad_overview(user=Depends(current_user)):
-    if user["role"] != "cad":
-        raise HTTPException(status_code=403, detail="Clinical CAD team only")
+    if user["role"] != "planning":
+        raise HTTPException(status_code=403, detail="Planning team only")
     collection = order_store()
     statuses = {row["_id"]: row["count"] for row in collection.aggregate([
         {"$group": {"_id": "$status", "count": {"$sum": 1}}},
@@ -672,8 +703,8 @@ def cad_overview(user=Depends(current_user)):
 
 @app.get("/api/lab/overview")
 def lab_overview(user=Depends(current_user)):
-    if user["role"] != "lab":
-        raise HTTPException(status_code=403, detail="Lab / Manufacturing team only")
+    if user["role"] != "production":
+        raise HTTPException(status_code=403, detail="Production team only")
     collection = order_store()
     statuses = {row["_id"]: row["count"] for row in collection.aggregate([
         {"$match": {"status": {"$in": VISIBLE_PRODUCTION_STEPS}}},
@@ -698,15 +729,15 @@ def lab_overview(user=Depends(current_user)):
 
 @app.get("/api/qc/overview")
 def qc_overview(user=Depends(current_user)):
-    if user["role"] != "qc":
-        raise HTTPException(status_code=403, detail="QC team only")
+    if user["role"] != "planning":
+        raise HTTPException(status_code=403, detail="Planning team only")
     collection = order_store()
     statuses = {row["_id"]: row["count"] for row in collection.aggregate([
         {"$match": {"status": {"$in": QC_VISIBLE_STEPS}}},
         {"$group": {"_id": "$status", "count": {"$sum": 1}}},
     ])}
     resolved = collection.count_documents({"status": "manufactured", "issues": {
-        "$elemMatch": {"raised_to": "lab", "resolved_at": {"$ne": None}}}})
+        "$elemMatch": {"raised_to": {"$in": ["production", "lab"]}, "resolved_at": {"$ne": None}}}})
     clinics = [{"id": row["_id"], "name": row["name"]}
                for row in collection.aggregate([
                    {"$match": {"status": {"$in": QC_VISIBLE_STEPS},
@@ -716,9 +747,9 @@ def qc_overview(user=Depends(current_user)):
                ])]
     return {"all_orders": sum(statuses.values()),
             "qc_approval_pending": statuses.get("manufactured", 0) - resolved,
-            "issue_raised": statuses.get("qc_issues", 0),
-            "issue_resolved": resolved,
-            "approval_completed": statuses.get("qc_approved", 0) +
+            "qc_issue_raised": statuses.get("qc_issues", 0),
+            "qc_issue_resolved": resolved,
+            "qc_approval_completed": statuses.get("qc_approved", 0) +
                                   statuses.get("manufacture_completed", 0),
             "clinics": clinics}
 
@@ -797,9 +828,9 @@ def add_issue(order_id: str, body: IssueInput, user=Depends(current_user)):
     if doc["status"] == "cancelled":
         raise HTTPException(status_code=409, detail="Order is cancelled")
     if user["role"] == "marketing":
-        source_status, issue_status, target_team = "plan_completed", "clinician_issues", "cad"
-    elif user["role"] == "qc":
-        source_status, issue_status, target_team = "manufactured", "qc_issues", "lab"
+        source_status, issue_status, target_team = "plan_completed", "clinician_issues", "planning"
+    elif user["role"] == "planning":
+        source_status, issue_status, target_team = "manufactured", "qc_issues", "production"
     else:
         raise HTTPException(status_code=403, detail="This team cannot raise an issue")
     if body.raised_to != target_team or doc["status"] != source_status:
@@ -825,9 +856,10 @@ def resolve_issue(order_id: str, issue_id: str, user=Depends(current_user)):
     if issue is None:
         raise HTTPException(status_code=404, detail="Issue not found")
     target_team = issue["raised_to"]
-    issue_status = "qc_issues" if target_team == "lab" else "clinician_issues"
-    return_status = "manufactured" if target_team == "lab" else "plan_completed"
-    if user["role"] != target_team and not (target_team == "cad" and user["role"] == "admin"):
+    canonical_team = {"lab": "production", "cad": "planning"}.get(target_team, target_team)
+    issue_status = "qc_issues" if canonical_team == "production" else "clinician_issues"
+    return_status = "manufactured" if canonical_team == "production" else "plan_completed"
+    if user["role"] != canonical_team and not (canonical_team == "planning" and user["role"] == "admin"):
         raise HTTPException(status_code=403, detail="Issue belongs to another team")
     if doc["status"] != issue_status or issue["resolved_at"] is not None:
         raise HTTPException(status_code=409, detail="Issue is not open for resolution")
