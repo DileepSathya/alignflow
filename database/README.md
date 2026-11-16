@@ -9,7 +9,7 @@ Or run these commands from the project root in PowerShell (enter your PostgreSQL
 & 'C:\Program Files\PostgreSQL\17\bin\psql.exe' -h localhost -U postgres -W -d alignflow -f database/setup.sql
 ```
 
-The script creates the `users`, `sessions`, `clinics`, and `clinicians` tables and seeds `admin` / `admin`. It is safe to rerun if needed. Run it again on an existing database to add the clinicians table before using the updated app. Change the seeded password immediately for any shared environment. The API does not create or migrate tables at startup.
+The script creates the `users`, `sessions`, `clinics`, and `clinicians` tables and seeds `admin` / `admin`. It is safe to rerun if needed. Run it again on an existing database to copy legacy dentist records into `clinicians` and remove the old `dentist_name` column from `clinics`. The clinic name, contact number, email, and area remain on `clinics`. Change the seeded password immediately for any shared environment. The API does not create or migrate tables at startup.
 
 ## Orders: MongoDB
 

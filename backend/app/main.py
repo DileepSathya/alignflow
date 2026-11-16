@@ -140,13 +140,12 @@ class ClinicianInput(BaseModel):
 
 class ClinicInput(BaseModel):
     clinic_name: str = Field(min_length=1)
-    dentist_name: str = Field(min_length=1)
     contact_number: str = Field(min_length=1)
     email: str | None = None
     area: str = Field(min_length=1)
     clinicians: list[ClinicianInput] | None = None
 
-    @field_validator("clinic_name", "dentist_name", "contact_number", "area")
+    @field_validator("clinic_name", "contact_number", "area")
     @classmethod
     def required_text(cls, value: str) -> str:
         value = value.strip()
@@ -316,8 +315,9 @@ def save_clinicians(cur, clinic_id: int, clinicians: list[ClinicianInput]):
     for person in clinicians:
         if person.clinician_id is None:
             cur.execute("INSERT INTO clinicians (name, mobile_number, email, clinic_id) "
-                        "VALUES (%s, %s, %s, %s)",
+                        "VALUES (%s, %s, %s, %s) RETURNING clinician_id",
                         (person.name, person.mobile_number, person.email, clinic_id))
+            ids.append(cur.fetchone()["clinician_id"])
         else:
             cur.execute("UPDATE clinicians SET name = %s, mobile_number = %s, email = %s "
                         "WHERE clinician_id = %s AND clinic_id = %s",
@@ -338,13 +338,12 @@ def create_clinic(body: ClinicInput, user=Depends(marketing_user), conn=Depends(
         raise HTTPException(status_code=400, detail="New clinicians cannot have an ID")
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO clinics (clinic_name, dentist_name, contact_number, email, area, created_by) "
-            "VALUES (%s, %s, %s, %s, %s, %s) RETURNING *",
-            (body.clinic_name, body.dentist_name, body.contact_number, body.email, body.area, user["id"]),
+            "INSERT INTO clinics (clinic_name, contact_number, email, area, created_by) "
+            "VALUES (%s, %s, %s, %s, %s) RETURNING *",
+            (body.clinic_name, body.contact_number, body.email, body.area, user["id"]),
         )
         clinic = cur.fetchone()
-        if body.clinicians is not None:
-            save_clinicians(cur, clinic["id"], body.clinicians)
+        save_clinicians(cur, clinic["id"], body.clinicians or [])
         return {"clinic": clinic_with_clinicians(cur, clinic)}
 
 
@@ -352,9 +351,9 @@ def create_clinic(body: ClinicInput, user=Depends(marketing_user), conn=Depends(
 def update_clinic(clinic_id: int, body: ClinicInput, user=Depends(marketing_user), conn=Depends(connection)):
     with conn.cursor() as cur:
         cur.execute(
-            "UPDATE clinics SET clinic_name = %s, dentist_name = %s, contact_number = %s, "
+            "UPDATE clinics SET clinic_name = %s, contact_number = %s, "
             "email = %s, area = %s, updated_at = NOW() WHERE id = %s RETURNING *",
-            (body.clinic_name, body.dentist_name, body.contact_number, body.email, body.area, clinic_id),
+            (body.clinic_name, body.contact_number, body.email, body.area, clinic_id),
         )
         clinic = cur.fetchone()
         if clinic is None:
@@ -447,6 +446,10 @@ def create_order(body: OrderInput, user=Depends(marketing_user), conn=Depends(co
     with conn.cursor() as cur:
         cur.execute("SELECT * FROM clinics WHERE id = %s", (body.clinic_id,))
         clinic = cur.fetchone()
+        if clinic is not None:
+            cur.execute("SELECT name, mobile_number, email FROM clinicians WHERE clinic_id = %s "
+                        "ORDER BY clinician_id", (body.clinic_id,))
+            clinic_people = cur.fetchall()
     if clinic is None:
         raise HTTPException(status_code=400, detail="Choose an existing clinic")
     sequence = mongo.counters.find_one_and_update(
@@ -456,7 +459,7 @@ def create_order(body: OrderInput, user=Depends(marketing_user), conn=Depends(co
     doc = {"order_id": f"ORD-{sequence:06d}", "request_id": body.request_id,
            "patient_name": body.patient_name.strip(), "age": body.age, "notes": body.notes.strip(),
            "clinic_id": body.clinic_id,
-           "clinic": {"name": clinic["clinic_name"], "dentist": clinic["dentist_name"],
+           "clinic": {"name": clinic["clinic_name"], "clinicians": clinic_people,
                       "contact": clinic["contact_number"], "email": clinic["email"], "area": clinic["area"]},
            "status": "submitted", "created_at": timestamp, "updated_at": timestamp,
            "created_by": {"id": user["id"], "name": user["name"], "role": user["role"]},

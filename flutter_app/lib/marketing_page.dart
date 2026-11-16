@@ -219,7 +219,11 @@ class _MarketingPageState extends State<MarketingPage> {
     final narrow = MediaQuery.sizeOf(context).width < 900;
     final query = search.text.trim().toLowerCase();
     final visible = clinics
-        .where((c) => [c['clinic_name'], c['dentist_name'], c['area']]
+        .where((c) => [
+              c['clinic_name'],
+              c['area'],
+              ...((c['clinicians'] as List?) ?? []).map((person) => person['name'])
+            ]
             .any((v) => (v?.toString().toLowerCase() ?? '').contains(query)))
         .toList();
     return Scaffold(
@@ -278,7 +282,7 @@ class _MarketingPageState extends State<MarketingPage> {
                                   decoration: const InputDecoration(
                                       prefixIcon: Icon(Icons.search),
                                       hintText:
-                                          'Search clinic, dentist or area',
+                                          'Search clinic, clinician or area',
                                       filled: true,
                                       fillColor: Colors.white)),
                               const SizedBox(height: 18),
@@ -324,7 +328,7 @@ class _MarketingPageState extends State<MarketingPage> {
                                                                                 FontWeight.bold,
                                                                             fontSize: 16)),
                                                                     Text(
-                                                                        'Dentist: ${visible[i]['dentist_name']}'),
+                                                                        'Clinicians: ${((visible[i]['clinicians'] as List?) ?? []).map((person) => person['name']).join(', ')}'),
                                                                     Text(
                                                                         'Contact: ${visible[i]['contact_number']}'),
                                                                     if (visible[i]
@@ -374,7 +378,7 @@ class _MarketingPageState extends State<MarketingPage> {
                                                               Expanded(
                                                                   flex: 2,
                                                                   child: Text(
-                                                                      'DENTIST')),
+                                                                      'CLINICIANS')),
                                                               Expanded(
                                                                   flex: 3,
                                                                   child: Text(
@@ -439,7 +443,10 @@ class _ClinicRowState extends State<ClinicRow> {
                 child: Text(widget.clinic['clinic_name'] as String,
                     style: const TextStyle(fontWeight: FontWeight.w600))),
             Expanded(
-                flex: 2, child: Text(widget.clinic['dentist_name'] as String)),
+                flex: 2,
+                child: Text(((widget.clinic['clinicians'] as List?) ?? [])
+                    .map((person) => person['name'])
+                    .join(', '))),
             Expanded(
                 flex: 3,
                 child: Column(
@@ -511,8 +518,6 @@ class _ClinicDialogState extends State<ClinicDialog> {
           .toList();
   late final name = TextEditingController(
       text: widget.clinic?['clinic_name'] as String? ?? '');
-  late final dentist = TextEditingController(
-      text: widget.clinic?['dentist_name'] as String? ?? '');
   late final contact = TextEditingController(
       text: widget.clinic?['contact_number'] as String? ?? '');
   late final email =
@@ -525,7 +530,6 @@ class _ClinicDialogState extends State<ClinicDialog> {
   @override
   void dispose() {
     name.dispose();
-    dentist.dispose();
     contact.dispose();
     email.dispose();
     area.dispose();
@@ -536,7 +540,7 @@ class _ClinicDialogState extends State<ClinicDialog> {
   }
 
   Future<void> save() async {
-    if ([name, dentist, contact, area].any((c) => c.text.trim().isEmpty)) {
+    if ([name, contact, area].any((c) => c.text.trim().isEmpty)) {
       setState(() => error = 'Complete all required fields.');
       return;
     }
@@ -570,7 +574,6 @@ class _ClinicDialogState extends State<ClinicDialog> {
               : '/api/clinics/${widget.clinic!['id']}',
           {
             'clinic_name': name.text.trim(),
-            'dentist_name': dentist.text.trim(),
             'contact_number': contact.text.trim(),
             'email': email.text.trim(),
             'area': area.text.trim(),
@@ -603,10 +606,6 @@ class _ClinicDialogState extends State<ClinicDialog> {
                           const InputDecoration(labelText: 'Clinic name')),
                   const SizedBox(height: 12),
                   TextField(
-                      controller: dentist,
-                      decoration: const InputDecoration(labelText: 'Dentist')),
-                  const SizedBox(height: 12),
-                  TextField(
                       controller: contact,
                       keyboardType: TextInputType.phone,
                       decoration:
@@ -623,7 +622,8 @@ class _ClinicDialogState extends State<ClinicDialog> {
                       decoration:
                           const InputDecoration(labelText: 'Area / city')),
                   const SizedBox(height: 18),
-                  Text('Clinicians', style: Theme.of(context).textTheme.titleMedium),
+                  Text('Clinicians',
+                      style: Theme.of(context).textTheme.titleMedium),
                   for (final clinician in clinicians) ...[
                     const SizedBox(height: 12),
                     Row(children: [

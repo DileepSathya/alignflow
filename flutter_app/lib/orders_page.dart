@@ -476,7 +476,7 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
                       onChanged: (value) => setState(() => clinicId = value)),
                   if (clinic != null) ...[
                     const SizedBox(height: 12),
-                    Text('Dentist: ${clinic['dentist_name']}'),
+                    Text('Clinicians: ${((clinic['clinicians'] as List?) ?? []).map((person) => person['name']).join(', ')}'),
                     Text(
                         'Contact: ${clinic['contact_number']}  •  ${clinic['email'] ?? 'No email'}'),
                   ],
@@ -883,8 +883,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('Name: ${(data['clinic'] as Map)['name']}'),
-                          Text(
-                              'Dentist: ${(data['clinic'] as Map)['dentist']}'),
+                          Text('Clinicians: ${((data['clinic'] as Map)['clinicians'] as List?)?.map((person) => person['name']).join(', ') ?? (data['clinic'] as Map)['dentist'] ?? '—'}'),
                           Text(
                               'Contact: ${(data['clinic'] as Map)['contact']}'),
                           Text(
