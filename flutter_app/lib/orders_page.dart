@@ -116,7 +116,9 @@ class _OrdersPageState extends State<OrdersPage> {
   Future<void> openOrder(Map<String, dynamic> order) async {
     await Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => OrderDetailPage(
-            api: widget.api, orderId: order['order_id'] as String)));
+            api: widget.api,
+            orderId: order['order_id'] as String,
+            role: widget.user['role'] as String)));
     refresh();
   }
 
@@ -135,7 +137,8 @@ class _OrdersPageState extends State<OrdersPage> {
                 title: 'Orders',
                 subtitle:
                     'Track every patient case from submission to delivery.'),
-            if (widget.user['role'] != 'clinic_admin')
+            if (widget.user['role'] == 'marketing' ||
+                widget.user['role'] == 'clinic_admin')
               FilledButton.icon(
                   onPressed: create,
                   icon: const Icon(Icons.upload_outlined),
@@ -391,7 +394,10 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
       clinicPatientId = TextEditingController(),
       age = TextEditingController(),
       notes = TextEditingController();
-  int? clinicId;
+  int? get clinicId => widget.clinics.length == 1
+      ? widget.clinics.first['id'] as int
+      : selectedClinicId;
+  int? selectedClinicId;
   int? clinicianId;
   bool saving = false;
   String? error;
@@ -515,10 +521,12 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
                               value: item['id'] as int,
                               child: Text(item['clinic_name'] as String)))
                           .toList(),
-                      onChanged: (value) => setState(() {
-                            clinicId = value;
-                            clinicianId = null;
-                          })),
+                      onChanged: widget.clinics.length == 1
+                          ? null
+                          : (value) => setState(() {
+                                selectedClinicId = value;
+                                clinicianId = null;
+                              })),
                   if (clinic != null) ...[
                     const SizedBox(height: 12),
                     DropdownButtonFormField<int>(
@@ -1100,7 +1108,8 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                                 '/api/orders/${widget.orderId}/issues/${item['id']}/resolve'),
                                         child: const Text('Resolve'))
                                     : null),
-                          if ((widget.role == 'marketing' &&
+                          if ((['marketing', 'clinic_admin']
+                                      .contains(widget.role) &&
                                   data['status'] == 'plan_completed') ||
                               (widget.qcMode &&
                                   data['status'] == 'manufactured'))
@@ -1110,7 +1119,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                     onPressed: busy ? null : raiseIssue,
                                     child: const Text('Raise issue'))),
                         ])),
-                if (widget.role == 'marketing' &&
+                if (['marketing', 'clinic_admin'].contains(widget.role) &&
                     [
                       'scanner_review',
                       'scanner_missing',
@@ -1153,7 +1162,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                               '/api/orders/${widget.orderId}/status',
                               {'status': 'plan_completed'}),
                       child: const Text('Plan completed')),
-                if (widget.role == 'marketing' &&
+                if (['marketing', 'clinic_admin'].contains(widget.role) &&
                     data['status'] == 'plan_completed')
                   FilledButton(
                       onPressed: busy
@@ -1163,7 +1172,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                               '/api/orders/${widget.orderId}/status',
                               {'status': 'clinician_approved'}),
                       child: const Text('Clinician approved')),
-                if (widget.role == 'marketing' &&
+                if (['marketing', 'clinic_admin'].contains(widget.role) &&
                     data['status'] == 'clinician_issues' &&
                     (data['issues'] as List).isEmpty)
                   OutlinedButton(

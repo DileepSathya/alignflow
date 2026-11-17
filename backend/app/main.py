@@ -258,8 +258,10 @@ def current_user(request: Request, authorization: str | None = Header(default=No
         raise HTTPException(status_code=401, detail="Session expired")
     if user['role'] == 'clinic_admin':
         path = request.url.path
-        allowed = path in {'/api/me', '/api/logout', '/api/my-clinic', '/api/my-clinic/clinicians', '/api/orders'} or path.startswith('/api/orders/')
-        if not allowed or (request.method != 'GET' and path not in {'/api/logout', '/api/my-clinic/clinicians'}):
+        allowed_get = path in {'/api/me', '/api/my-clinic', '/api/orders', '/api/patients'} or path.startswith('/api/orders/')
+        order_action = path.startswith('/api/orders/') and path.split('/')[-1] in {'issues', 'status', 'documents'}
+        allowed_post = path in {'/api/logout', '/api/my-clinic/clinicians', '/api/orders'} or order_action
+        if not ((request.method == 'GET' and allowed_get) or (request.method == 'POST' and allowed_post)):
             raise HTTPException(status_code=403, detail='Clinic access is restricted')
         with conn.cursor() as cur:
             cur.execute('SELECT approval_status FROM clinics WHERE id=%s', (user['clinic_id'],))
@@ -615,7 +617,7 @@ class StatusInput(BaseModel):
 
 ORDER_STEPS = ["submitted", "planning_in_progress", "plan_completed", "clinician_issues", "clinician_approved",
                "manufacturing_in_process", "manufactured", "qc_issues", "qc_approved"]
-STATUS_ROLES = {"plan_completed": "planning", "clinician_approved": "marketing",
+STATUS_ROLES = {"plan_completed": "planning", "clinician_approved": "clinic_admin",
                 "manufacturing_in_process": "production", "manufactured": "production",
                 "qc_approved": "planning"}
 VISIBLE_PRODUCTION_STEPS = ORDER_STEPS[4:] + ["manufacture_completed"]  # Legacy completed orders.
@@ -793,8 +795,10 @@ def get_order(order_id: str, user: dict):
 @app.get("/api/patients")
 def list_patients(clinic_id: int | None = None, q: str = "", user=Depends(current_user),
                   conn=Depends(connection)):
-    if user["role"] not in {"marketing", "admin"}:
+    if user["role"] not in {"marketing", "admin", "clinic_admin"}:
         raise HTTPException(status_code=403, detail="Patient list is restricted")
+    if user["role"] == "clinic_admin":
+        clinic_id = user["clinic_id"]
     term = q.strip()
     id_term = term[4:].lstrip("0") or "0" if term.upper().startswith("PAT-") else term
     with conn.cursor() as cur:
@@ -809,7 +813,11 @@ def list_patients(clinic_id: int | None = None, q: str = "", user=Depends(curren
 
 
 @app.post("/api/orders", status_code=201)
-def create_order(body: OrderInput, user=Depends(marketing_user), conn=Depends(connection)):
+def create_order(body: OrderInput, user=Depends(current_user), conn=Depends(connection)):
+    if user["role"] not in {"marketing", "clinic_admin"}:
+        raise HTTPException(status_code=403, detail="Order submission is restricted")
+    if user["role"] == "clinic_admin" and body.clinic_id != user["clinic_id"]:
+        raise HTTPException(status_code=403, detail="Choose your own clinic")
     existing = order_store().find_one({"request_id": body.request_id})
     if existing:
         if existing["created_by"]["id"] != user["id"]:
@@ -1159,7 +1167,7 @@ def add_issue(order_id: str, body: IssueInput, user=Depends(current_user)):
     doc = get_order(order_id, user)
     if doc["status"] == "cancelled":
         raise HTTPException(status_code=409, detail="Order is cancelled")
-    if user["role"] == "marketing":
+    if user["role"] in {"marketing", "clinic_admin"}:
         source_status, issue_status, target_team = "plan_completed", "clinician_issues", "planning"
     elif user["role"] == "planning":
         source_status, issue_status, target_team = "manufactured", "qc_issues", "production"
@@ -1233,14 +1241,15 @@ def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
     if target == "plan_completed" and doc["status"] == "planning_in_progress" and (doc.get("assigned_planner") or {}).get("id") != user["id"]:
         raise HTTPException(status_code=403, detail="Only the assigned planner can complete the plan")
     if target == "cancelled":
-        if user["role"] != "marketing":
-            raise HTTPException(status_code=403, detail="Marketing team only")
+        if user["role"] not in {"marketing", "clinic_admin"}:
+            raise HTTPException(status_code=403, detail="Marketing or clinic admin only")
         if doc["status"] not in ORDER_STEPS[:4] + SCANNER_STEPS:
             raise HTTPException(status_code=409, detail="Order cannot be cancelled after clinician approval")
     else:
         legacy_review_reset = (target == "plan_completed" and doc["status"] == "clinician_issues"
-                               and user["role"] == "marketing" and not doc["issues"])
-        if not legacy_review_reset and (target not in STATUS_ROLES or user["role"] != STATUS_ROLES[target]):
+                               and user["role"] in {"marketing", "clinic_admin"} and not doc["issues"])
+        clinical_approval = target == "clinician_approved" and user["role"] in {"marketing", "clinic_admin"}
+        if not legacy_review_reset and not clinical_approval and (target not in STATUS_ROLES or user["role"] != STATUS_ROLES[target]):
             raise HTTPException(status_code=403, detail="Team cannot set this status")
         allowed = (legacy_review_reset or
                    (doc["status"] == "planning_in_progress" and target == "plan_completed") or
