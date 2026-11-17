@@ -4,7 +4,8 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(30) NOT NULL UNIQUE,
     password TEXT NOT NULL,
     name TEXT NOT NULL,
-    role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'marketing', 'scanner', 'planning', 'production')),
+    role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'marketing', 'scanner', 'planning', 'production', 'clinic_admin')),
+    clinic_id BIGINT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -23,18 +24,30 @@ CREATE TABLE IF NOT EXISTS clinics (
     email TEXT,
     area TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    signup_source TEXT NOT NULL DEFAULT 'marketing',
+    approval_status TEXT NOT NULL DEFAULT 'approved',
+    reviewed_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_at TIMESTAMPTZ,
+    rejection_reason TEXT
 );
 
 ALTER TABLE clinics ADD COLUMN IF NOT EXISTS created_by BIGINT REFERENCES users(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS clinics_created_by_idx ON clinics (created_by);
+DO $$ BEGIN
+    ALTER TABLE users ADD CONSTRAINT users_clinic_id_fkey FOREIGN KEY (clinic_id) REFERENCES clinics(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE TABLE IF NOT EXISTS clinicians (
     clinician_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name TEXT NOT NULL,
     mobile_number TEXT NOT NULL,
     email TEXT,
-    clinic_id BIGINT NOT NULL REFERENCES clinics(id) ON DELETE CASCADE
+    clinic_id BIGINT NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
+    clinical_role TEXT NOT NULL DEFAULT 'doctor',
+    added_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    account_id BIGINT UNIQUE REFERENCES users(id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS clinicians_clinic_id_idx ON clinicians (clinic_id);
 

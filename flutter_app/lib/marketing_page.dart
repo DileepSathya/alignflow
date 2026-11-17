@@ -89,6 +89,38 @@ class _MarketingPageState extends State<MarketingPage> {
     }
   }
 
+  Future<void> resetPassword(Map<String, dynamic> clinic) async {
+    final password = TextEditingController();
+    final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+                title: const Text('Reset clinic admin password'),
+                content: TextField(
+                    controller: password,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                        labelText: 'New password (8+ characters)')),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancel')),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Reset'))
+                ]));
+    if (confirmed == true) {
+      try {
+        await widget.api.request(
+            'POST',
+            '/api/clinics/${clinic['id']}/admin-password',
+            {'password': password.text});
+      } catch (e) {
+        if (mounted) setState(() => error = e.toString());
+      }
+    }
+    password.dispose();
+  }
+
   void showActions(Map<String, dynamic> clinic) {
     showModalBottomSheet<void>(
         context: context,
@@ -113,6 +145,14 @@ class _MarketingPageState extends State<MarketingPage> {
                       Navigator.pop(sheetContext);
                       delete(clinic);
                     }),
+                if (clinic['created_by'] == widget.user['id'])
+                  ListTile(
+                      leading: const Icon(Icons.lock_reset),
+                      title: const Text('Reset clinic admin password'),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        resetPassword(clinic);
+                      }),
               ],
             )));
   }
@@ -375,9 +415,14 @@ class _MarketingPageState extends State<MarketingPage> {
                                                           clinic: visible[i],
                                                           onEdit: () =>
                                                               edit(visible[i]),
-                                                          onDelete: () =>
-                                                              delete(visible[
-                                                                  i])))),
+                                                          onResetPassword:
+                                                              visible[i]['created_by'] ==
+                                                                      widget.user[
+                                                                          'id']
+                                                                  ? () =>
+                                                                      resetPassword(visible[i])
+                                                                  : null,
+                                                          onDelete: () => delete(visible[i])))),
                                             ]))),
                       ])));
   }
@@ -387,10 +432,12 @@ class ClinicRow extends StatefulWidget {
   final Map<String, dynamic> clinic;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback? onResetPassword;
   const ClinicRow(
       {super.key,
       required this.clinic,
       required this.onEdit,
+      this.onResetPassword,
       required this.onDelete});
   @override
   State<ClinicRow> createState() => _ClinicRowState();
@@ -445,7 +492,7 @@ class _ClinicRowState extends State<ClinicRow> {
                   Expanded(
                       flex: 2, child: Text(widget.clinic['area'] as String)),
                   SizedBox(
-                      width: 92,
+                      width: 140,
                       child: hovered
                           ? Row(children: [
                               IconButton(
@@ -458,6 +505,12 @@ class _ClinicRowState extends State<ClinicRow> {
                                   icon: const Icon(Icons.delete_outline,
                                       size: 19),
                                   onPressed: widget.onDelete),
+                              if (widget.onResetPassword != null)
+                                IconButton(
+                                    tooltip: 'Reset clinic admin password',
+                                    icon:
+                                        const Icon(Icons.lock_reset, size: 19),
+                                    onPressed: widget.onResetPassword),
                             ])
                           : null),
                 ]))),
@@ -500,12 +553,14 @@ class _ClinicianFields {
   final name = TextEditingController();
   final mobile = TextEditingController();
   final email = TextEditingController();
+  final role = TextEditingController(text: 'doctor');
 
   _ClinicianFields([Map<String, dynamic>? value])
       : id = value?['clinician_id'] as int? {
     name.text = value?['name'] as String? ?? '';
     mobile.text = value?['mobile_number'] as String? ?? '';
     email.text = value?['email'] as String? ?? '';
+    role.text = value?['clinical_role'] as String? ?? 'doctor';
   }
 
   Map<String, dynamic> toJson() => {
@@ -513,20 +568,30 @@ class _ClinicianFields {
         'name': name.text.trim(),
         'mobile_number': mobile.text.trim(),
         'email': email.text.trim(),
+        'clinical_role': role.text.trim(),
       };
 
   void dispose() {
     name.dispose();
     mobile.dispose();
     email.dispose();
+    role.dispose();
   }
 }
 
 class _ClinicDialogState extends State<ClinicDialog> {
+  bool get needsAdmin =>
+      widget.clinic == null ||
+      !(((widget.clinic?['clinicians'] as List?) ?? [])
+          .any((c) => c['account_id'] != null));
   late final List<_ClinicianFields> clinicians =
       ((widget.clinic?['clinicians'] as List?) ?? [])
           .map((value) => _ClinicianFields(value as Map<String, dynamic>))
-          .toList();
+          .toList()
+        ..addAll((needsAdmin &&
+                ((widget.clinic?['clinicians'] as List?) ?? []).isEmpty)
+            ? [_ClinicianFields()]
+            : []);
   late final name = TextEditingController(
       text: widget.clinic?['clinic_name'] as String? ?? '');
   late final contact = TextEditingController(
@@ -535,6 +600,8 @@ class _ClinicDialogState extends State<ClinicDialog> {
       TextEditingController(text: widget.clinic?['email'] as String? ?? '');
   late final area =
       TextEditingController(text: widget.clinic?['area'] as String? ?? '');
+  final adminUsername = TextEditingController();
+  final adminPassword = TextEditingController();
   bool saving = false;
   String? error;
 
@@ -544,6 +611,8 @@ class _ClinicDialogState extends State<ClinicDialog> {
     contact.dispose();
     email.dispose();
     area.dispose();
+    adminUsername.dispose();
+    adminPassword.dispose();
     for (final clinician in clinicians) {
       clinician.dispose();
     }
@@ -551,6 +620,22 @@ class _ClinicDialogState extends State<ClinicDialog> {
   }
 
   Future<void> save() async {
+    if (needsAdmin && clinicians.isEmpty) {
+      setState(() => error = 'Add a clinic admin clinician.');
+      return;
+    }
+    if (needsAdmin && adminUsername.text.trim().isEmpty) {
+      setState(() => error = 'Enter a clinic admin username.');
+      return;
+    }
+    if (needsAdmin && adminPassword.text.length < 8) {
+      setState(() => error = 'Clinic admin password must have at least 8 characters.');
+      return;
+    }
+    if (needsAdmin && clinicians.first.email.text.trim().isEmpty) {
+      setState(() => error = 'Enter the clinic admin clinician email.');
+      return;
+    }
     if ([name, contact, area].any((c) => c.text.trim().isEmpty)) {
       setState(() => error = 'Complete all required fields.');
       return;
@@ -591,6 +676,8 @@ class _ClinicDialogState extends State<ClinicDialog> {
             'area': area.text.trim(),
             'clinicians':
                 clinicians.map((clinician) => clinician.toJson()).toList(),
+            if (needsAdmin) 'admin_username': adminUsername.text.trim(),
+            if (needsAdmin) 'admin_password': adminPassword.text,
           });
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -637,6 +724,18 @@ class _ClinicDialogState extends State<ClinicDialog> {
                   const SizedBox(height: 18),
                   Text('Clinicians',
                       style: Theme.of(context).textTheme.titleMedium),
+                  if (needsAdmin) ...[
+                    TextField(
+                        controller: adminUsername,
+                        decoration: const InputDecoration(
+                            labelText: 'Clinic admin username')),
+                    TextField(
+                        controller: adminPassword,
+                        obscureText: true,
+                        decoration: const InputDecoration(
+                            labelText: 'Clinic admin password')),
+                    const Text('The first clinician is the clinic admin.'),
+                  ],
                   for (final clinician in clinicians) ...[
                     const SizedBox(height: 12),
                     Row(children: [
@@ -648,10 +747,12 @@ class _ClinicDialogState extends State<ClinicDialog> {
                       IconButton(
                           tooltip: 'Remove clinician',
                           icon: const Icon(Icons.delete_outline),
-                          onPressed: () => setState(() {
-                                clinicians.remove(clinician);
-                                clinician.dispose();
-                              }))
+                          onPressed: needsAdmin && clinician == clinicians.first
+                              ? null
+                              : () => setState(() {
+                                    clinicians.remove(clinician);
+                                    clinician.dispose();
+                                  }))
                     ]),
                     const SizedBox(height: 8),
                     TextField(
@@ -663,8 +764,14 @@ class _ClinicDialogState extends State<ClinicDialog> {
                     TextField(
                         controller: clinician.email,
                         keyboardType: TextInputType.emailAddress,
-                        decoration: const InputDecoration(
-                            labelText: 'Email (optional)')),
+                        decoration: InputDecoration(
+                            labelText: needsAdmin && clinician == clinicians.first
+                                ? 'Email (required for clinic admin)'
+                                : 'Email (optional)')),
+                    TextField(
+                        controller: clinician.role,
+                        decoration:
+                            const InputDecoration(labelText: 'Clinical role')),
                   ],
                   TextButton.icon(
                       onPressed: () =>

@@ -4,6 +4,7 @@ import 'api.dart';
 import 'admin_page.dart';
 import 'demo_style.dart';
 import 'orders_page.dart';
+import 'clinic_approvals.dart';
 
 class AdminWorkspace extends StatefulWidget {
   final Api api;
@@ -21,10 +22,16 @@ class AdminWorkspace extends StatefulWidget {
 class _AdminWorkspaceState extends State<AdminWorkspace> {
   String section = 'All orders';
   int orderCount = 0, userCount = 0;
-  final sections = const ['All orders', 'Users', 'Performance'];
+  final sections = const [
+    'All orders',
+    'Users',
+    'Clinic approvals',
+    'Performance'
+  ];
   final icons = const [
     Icons.receipt_long_outlined,
     Icons.people_outline,
+    Icons.verified_outlined,
     Icons.bar_chart_outlined
   ];
 
@@ -142,6 +149,7 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
               embedded: true,
               onUsersChanged: refreshCounts),
           'Performance' => AdminPerformanceView(api: widget.api),
+          'Clinic approvals' => ClinicApprovals(api: widget.api),
           _ => AdminOrdersView(
               api: widget.api,
               onOverviewChanged: (data) {

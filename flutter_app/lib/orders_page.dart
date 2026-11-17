@@ -135,10 +135,11 @@ class _OrdersPageState extends State<OrdersPage> {
                 title: 'Orders',
                 subtitle:
                     'Track every patient case from submission to delivery.'),
-            FilledButton.icon(
-                onPressed: create,
-                icon: const Icon(Icons.upload_outlined),
-                label: const Text('Upload patient details')),
+            if (widget.user['role'] != 'clinic_admin')
+              FilledButton.icon(
+                  onPressed: create,
+                  icon: const Icon(Icons.upload_outlined),
+                  label: const Text('Upload patient details')),
           ]),
       const SizedBox(height: 18),
       Row(children: [
