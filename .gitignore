@@ -10,3 +10,4 @@ ios/Pods/
 android/.gradle/
 .local/
 data/
+.idea/
