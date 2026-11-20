@@ -258,7 +258,7 @@ def current_user(request: Request, authorization: str | None = Header(default=No
         raise HTTPException(status_code=401, detail="Session expired")
     if user['role'] == 'clinic_admin':
         path = request.url.path
-        allowed_get = path in {'/api/me', '/api/my-clinic', '/api/orders', '/api/patients'} or path.startswith('/api/orders/')
+        allowed_get = path in {'/api/me', '/api/my-clinic', '/api/my-clinic/overview', '/api/orders', '/api/patients'} or path.startswith('/api/orders/')
         order_action = path.startswith('/api/orders/') and path.split('/')[-1] in {'issues', 'status', 'documents'}
         allowed_post = path in {'/api/logout', '/api/my-clinic/clinicians', '/api/orders'} or order_action
         if not ((request.method == 'GET' and allowed_get) or (request.method == 'POST' and allowed_post)):
@@ -929,16 +929,78 @@ def marketing_performance(year: int, month: int, user=Depends(admin_user), conn=
             "months": months}
 
 
+CLINIC_GROUPS = {
+    "active": SCANNER_STEPS + ORDER_STEPS[:-1],
+    "scanner": SCANNER_STEPS,
+    "planning": ["submitted", "planning_in_progress"],
+    "approval": ["plan_completed"],
+    "revision": ["clinician_issues"],
+    "manufacturing": ["clinician_approved", "manufacturing_in_process"],
+    "qc": ["manufactured", "qc_issues"],
+    "completed": ["qc_approved", "manufacture_completed"],
+}
+
+
+@app.get("/api/my-clinic/overview")
+def clinic_overview(user=Depends(current_user)):
+    if user["role"] != "clinic_admin":
+        raise HTTPException(status_code=403, detail="Clinic admin only")
+    rows = list(order_store().find({"clinic_id": user["clinic_id"]},
+        {"documents": 0, "comments": 0, "checklist": 0}))
+    counts = {key: sum(r["status"] in statuses for r in rows)
+              for key, statuses in CLINIC_GROUPS.items()}
+    counts["total"] = len(rows)
+    counts["missing"] = sum(r["status"] == "scanner_missing" for r in rows)
+    counts["cancelled"] = sum(r["status"] == "cancelled" for r in rows)
+    year = now().year
+    months = [0] * 12
+    clinicians = {}
+    summaries = []
+    for row in rows:
+        created = row["created_at"]
+        if created.year == year:
+            months[created.month - 1] += 1
+        person = clinicians.setdefault(str(row.get("clinician_id", "")),
+            {"total": 0, "active": 0, "approval": 0})
+        person["total"] += 1
+        person["active"] += row["status"] in CLINIC_GROUPS["active"]
+        person["approval"] += row["status"] == "plan_completed"
+        entered = next((h["at"] for h in reversed(row.get("history", []))
+                        if h["status"] == row["status"]), created)
+        summaries.append({"order_id": row["order_id"], "patient_name": row["patient_name"],
+            "clinician_id": row.get("clinician_id"), "status": row["status"],
+            "updated_at": row.get("updated_at", created).isoformat(),
+            "stage_since": entered.isoformat() if isinstance(entered, datetime) else entered,
+            "revised": any(h["status"] == "clinician_issues" for h in row.get("history", [])),
+            "missing_request": row.get("missing_request") if row["status"] == "scanner_missing" else None})
+    return {"counts": counts, "year": year, "months": months, "clinicians": clinicians,
+            "approvals": sorted([r for r in summaries if r["status"] == "plan_completed"], key=lambda r: r["stage_since"]),
+            "missing": sorted([r for r in summaries if r["status"] == "scanner_missing"], key=lambda r: r["stage_since"]),
+            "recent": sorted(summaries, key=lambda r: r["updated_at"], reverse=True)[:10]}
+
+
 @app.get("/api/orders")
 def list_orders(q: str = "", status_filter: str = "", status_group: str = "", view: str = "",
                 clinic_id: int | None = None, page: int = 1, limit: int = 25, mine: bool = False, scanner_approved: bool = False,
-                scanner_missing: bool = False,
+    scanner_missing: bool = False, clinician_id: int | None = None, created_month: str = "",
                 user=Depends(current_user)):
     if page < 1 or not 1 <= limit <= 100:
         raise HTTPException(status_code=400, detail="Invalid page or limit")
     query = {}
     if user['role'] == 'clinic_admin':
         query['clinic_id'] = user['clinic_id']
+    if clinician_id is not None or created_month:
+        if user["role"] != "clinic_admin":
+            raise HTTPException(status_code=403, detail="Clinic filters require clinic admin")
+        if clinician_id is not None:
+            query["clinician_id"] = clinician_id
+        if created_month:
+            try:
+                start = datetime.strptime(created_month, "%Y-%m").replace(tzinfo=timezone.utc)
+                end = datetime(start.year + (start.month == 12), start.month % 12 + 1, 1, tzinfo=timezone.utc)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid month")
+            query["created_at"] = {"$gte": start, "$lt": end}
     if scanner_approved:
         query["scanner_approved"] = True
     if scanner_missing:
@@ -978,7 +1040,7 @@ def list_orders(q: str = "", status_filter: str = "", status_group: str = "", vi
             "qc_approval_completed": ["qc_approved", "manufacture_completed"],
         }
         groups = ({**cad_groups, **qc_groups} if user["role"] == "planning" else
-                  lab_groups if user["role"] == "production" else {})
+                  lab_groups if user["role"] == "production" else CLINIC_GROUPS if user["role"] == "clinic_admin" else {})
         if status_group not in groups:
             raise HTTPException(status_code=400, detail="Invalid status group")
         query["status"] = {"$in": groups[status_group]}
@@ -1369,3 +1431,4 @@ def delete_order_document(order_id: str, document_id: str, user=Depends(current_
         storage_path(settings.data_dir / "orders", key).unlink(missing_ok=True)
     else:
         files.delete(ObjectId(document_id))
+

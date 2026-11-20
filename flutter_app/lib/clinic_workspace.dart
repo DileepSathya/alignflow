@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'api.dart';
+import 'clinic_dashboard.dart';
 import 'orders_page.dart';
 import 'role_shell.dart';
 import 'demo_style.dart';
@@ -20,7 +21,7 @@ class ClinicWorkspace extends StatefulWidget {
 class _ClinicWorkspaceState extends State<ClinicWorkspace> {
   Map<String, dynamic>? clinic;
   String? error;
-  String section = 'Orders';
+  String section = 'Dashboard';
   @override
   void initState() {
     super.initState();
@@ -149,6 +150,7 @@ class _ClinicWorkspaceState extends State<ClinicWorkspace> {
           ),
           const SizedBox(height: 24),
           for (final item in [
+            ('Dashboard', Icons.dashboard_outlined),
             ('Orders', Icons.receipt_long_outlined),
             ('Clinicians', Icons.people_outline)
           ])
@@ -206,63 +208,75 @@ class _ClinicWorkspaceState extends State<ClinicWorkspace> {
                     child: error == null
                         ? const CircularProgressIndicator()
                         : Text(error!))
-                : section == 'Orders'
-                    ? OrdersPage(
-                        api: widget.api, clinics: [clinic!], user: widget.user)
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                            Row(children: [
-                              Expanded(
-                                  child: DemoPageHeading(
-                                title: 'Clinicians',
-                                subtitle:
-                                    'Manage clinicians at ${clinic!['clinic_name']}.',
-                              )),
-                              FilledButton.icon(
-                                onPressed: add,
-                                icon: const Icon(Icons.add),
-                                label: Text(compact ? 'Add' : 'Add clinician'),
-                              ),
-                            ]),
-                            const SizedBox(height: 18),
-                            if (error != null)
-                              Padding(
-                                  padding: const EdgeInsets.only(bottom: 12),
-                                  child: Text(error!,
-                                      style:
-                                          const TextStyle(color: Colors.red))),
-                            Expanded(
-                                child: people.isEmpty
-                                    ? const Center(
-                                        child: Text(
-                                            'No clinicians yet. Add your first clinician.'))
-                                    : Card(
-                                        child: ListView.separated(
-                                        itemCount: people.length,
-                                        separatorBuilder: (_, __) =>
-                                            const Divider(height: 1),
-                                        itemBuilder: (_, index) {
-                                          final person = people[index]
-                                              as Map<String, dynamic>;
-                                          return ListTile(
-                                            leading: const CircleAvatar(
-                                                child:
-                                                    Icon(Icons.person_outline)),
-                                            title: Text(
-                                                person['name']?.toString() ??
+                : section == 'Dashboard'
+                    ? ClinicDashboard(
+                        api: widget.api,
+                        clinic: clinic!,
+                        user: widget.user,
+                        onAddClinician: add)
+                    : section == 'Orders'
+                        ? OrdersPage(
+                            api: widget.api,
+                            clinics: [clinic!],
+                            user: widget.user)
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                                Row(children: [
+                                  Expanded(
+                                      child: DemoPageHeading(
+                                    title: 'Clinicians',
+                                    subtitle:
+                                        'Manage clinicians at ${clinic!['clinic_name']}.',
+                                  )),
+                                  FilledButton.icon(
+                                    onPressed: add,
+                                    icon: const Icon(Icons.add),
+                                    label:
+                                        Text(compact ? 'Add' : 'Add clinician'),
+                                  ),
+                                ]),
+                                const SizedBox(height: 18),
+                                if (error != null)
+                                  Padding(
+                                      padding:
+                                          const EdgeInsets.only(bottom: 12),
+                                      child: Text(error!,
+                                          style: const TextStyle(
+                                              color: Colors.red))),
+                                Expanded(
+                                    child: people.isEmpty
+                                        ? const Center(
+                                            child: Text(
+                                                'No clinicians yet. Add your first clinician.'))
+                                        : Card(
+                                            child: ListView.separated(
+                                            itemCount: people.length,
+                                            separatorBuilder: (_, __) =>
+                                                const Divider(height: 1),
+                                            itemBuilder: (_, index) {
+                                              final person = people[index]
+                                                  as Map<String, dynamic>;
+                                              return ListTile(
+                                                leading: const CircleAvatar(
+                                                    child: Icon(
+                                                        Icons.person_outline)),
+                                                title: Text(person['name']
+                                                        ?.toString() ??
                                                     ''),
-                                            subtitle: Text(
-                                                '${person['clinical_role'] ?? 'doctor'} · ${person['mobile_number'] ?? ''}'),
-                                            trailing: person['account_id'] ==
-                                                    widget.user['id']
-                                                ? const Chip(
-                                                    label: Text('Admin'))
-                                                : null,
-                                          );
-                                        },
-                                      ))),
-                          ]),
+                                                subtitle: Text(
+                                                    '${person['clinical_role'] ?? 'doctor'} · ${person['mobile_number'] ?? ''}'),
+                                                trailing:
+                                                    person['account_id'] ==
+                                                            widget.user['id']
+                                                        ? const Chip(
+                                                            label:
+                                                                Text('Admin'))
+                                                        : null,
+                                              );
+                                            },
+                                          ))),
+                              ]),
           ),
         ),
       ),

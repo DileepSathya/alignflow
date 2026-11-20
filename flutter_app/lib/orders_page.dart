@@ -44,12 +44,14 @@ class OrdersPage extends StatefulWidget {
   final Api api;
   final List<Map<String, dynamic>> clinics;
   final Map<String, dynamic> user;
+  final Map<String, String> dashboardFilters;
   final ValueChanged<int>? onTotalChanged;
   const OrdersPage(
       {super.key,
       required this.api,
       required this.clinics,
       required this.user,
+      this.dashboardFilters = const {},
       this.onTotalChanged});
   @override
   State<OrdersPage> createState() => _OrdersPageState();
@@ -83,6 +85,8 @@ class _OrdersPageState extends State<OrdersPage> {
     });
     try {
       final path = Uri(path: '/api/orders', queryParameters: {
+        ...widget.dashboardFilters,
+        if (filter.isNotEmpty) 'status_group': '',
         'page': '$page',
         'limit': '25',
         if (search.text.trim().isNotEmpty) 'q': search.text.trim(),
