@@ -895,7 +895,7 @@ def list_patients(clinic_id: int | None = None, q: str = "", user=Depends(curren
 
 @app.post("/api/orders", status_code=201)
 def create_order(body: OrderInput, user=Depends(current_user), conn=Depends(connection)):
-    if user["role"] not in {"marketing", "clinic_admin"}:
+    if user["role"] not in {"admin", "marketing", "clinic_admin"}:
         raise HTTPException(status_code=403, detail="Order submission is restricted")
     if user["role"] == "clinic_admin" and body.clinic_id != user["clinic_id"]:
         raise HTTPException(status_code=403, detail="Choose your own clinic")

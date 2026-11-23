@@ -271,6 +271,7 @@ class AdminOrdersView extends StatefulWidget {
 }
 
 class _AdminOrdersViewState extends State<AdminOrdersView> {
+  bool openingOrderForm = false;
   List<Map<String, dynamic>> orders = [];
   Map<String, dynamic> overview = {};
   bool loading = true;
@@ -330,6 +331,35 @@ class _AdminOrdersViewState extends State<AdminOrdersView> {
     }
   }
 
+  Future<void> createOrder() async {
+    if (openingOrderForm) return;
+    setState(() => openingOrderForm = true);
+    try {
+      final data = await widget.api.request('GET', '/api/clinics');
+      if (!mounted) return;
+      final clinics = (data['clinics'] as List).cast<Map<String, dynamic>>();
+      if (clinics.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('A clinic is required to create an order.')));
+        return;
+      }
+      final created = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => CreateOrderDialog(api: widget.api, clinics: clinics));
+      if (created == true && mounted) {
+        page = 1;
+        await Future.wait([refresh(), refreshOverview()]);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    } finally {
+      if (mounted) setState(() => openingOrderForm = false);
+    }
+  }
+
   Future<void> openOrder(Map<String, dynamic> order) async {
     await Navigator.push(
         context,
@@ -351,8 +381,12 @@ class _AdminOrdersViewState extends State<AdminOrdersView> {
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const DemoPageHeading(
+                    DemoPageHeading(
                         title: 'All orders',
+                        action: FilledButton.icon(
+                            onPressed: openingOrderForm ? null : createOrder,
+                            icon: const Icon(Icons.add),
+                            label: const Text('Create order')),
                         subtitle:
                             'Every order across Marketing, Planning and Production, including QC work, with its full details and current status.'),
                     const SizedBox(height: 20),

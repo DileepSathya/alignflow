@@ -149,7 +149,7 @@ class _OrdersPageState extends State<OrdersPage> {
               FilledButton.icon(
                   onPressed: create,
                   icon: const Icon(Icons.upload_outlined),
-                  label: const Text('Upload patient details')),
+                  label: const Text('Create order')),
           ]),
       const SizedBox(height: 18),
       Row(children: [
