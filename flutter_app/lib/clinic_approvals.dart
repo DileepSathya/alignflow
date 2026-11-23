@@ -68,6 +68,44 @@ class _ClinicApprovalsState extends State<ClinicApprovals> {
     }
   }
 
+  Future<void> viewClinic(int id) async {
+    try {
+      final clinic = await widget.api.request('GET', '/api/admin/clinics/$id');
+      if (!mounted) return;
+      await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+                title: Text(clinic['clinic_name'].toString()),
+                content: SizedBox(
+                  width: 500,
+                  child: ListView(shrinkWrap: true, children: [
+                    for (final field in {
+                      'Clinic name': clinic['clinic_name'],
+                      'Contact number': clinic['contact_number'],
+                      'Clinic email': clinic['email'],
+                      'Area': clinic['area'],
+                    }.entries)
+                      ListTile(title: Text(field.key), subtitle: Text('${field.value ?? ''}')),
+                    for (final person in clinic['clinicians'] as List) ...[
+                      const Divider(),
+                      for (final field in {
+                        'Clinician name': person['name'],
+                        'Clinician mobile': person['mobile_number'],
+                        'Clinician email': person['email'],
+                        'Clinical role': person['clinical_role'],
+                        'Username': person['username'],
+                      }.entries)
+                        ListTile(title: Text(field.key), subtitle: Text('${field.value ?? ''}')),
+                    ],
+                  ]),
+                ),
+                actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+              ));
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
+    }
+  }
+
   @override
   Widget build(BuildContext context) => ListView(children: [
         Padding(
@@ -87,6 +125,7 @@ class _ClinicApprovalsState extends State<ClinicApprovals> {
         for (final item in clinics)
           Card(
               child: ListTile(
+                  onTap: () => viewClinic(item['id'] as int),
                   title: Text(item['clinic_name'].toString()),
                   subtitle: Text(
                       '${item['area']} · ${item['email']} · ${item['contact_number']}\n${item['approval_status'] ?? 'approved'}'),

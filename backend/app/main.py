@@ -312,6 +312,18 @@ def clinic_approvals(admin=Depends(admin_user), conn=Depends(connection)):
         return {'clinics': cur.fetchall()}
 
 
+@app.get('/api/admin/clinics/{clinic_id}')
+def admin_clinic_details(clinic_id: int, admin=Depends(admin_user), conn=Depends(connection)):
+    with conn.cursor() as cur:
+        cur.execute("SELECT id, clinic_name, contact_number, email, area, signup_source, approval_status FROM clinics WHERE id=%s", (clinic_id,))
+        clinic = cur.fetchone()
+        if not clinic:
+            raise HTTPException(status_code=404, detail='Clinic not found')
+        cur.execute("SELECT c.name, c.mobile_number, c.email, c.clinical_role, u.username FROM clinicians c LEFT JOIN users u ON u.id=c.account_id WHERE c.clinic_id=%s ORDER BY c.clinician_id", (clinic_id,))
+        clinic['clinicians'] = cur.fetchall()
+    return clinic
+
+
 class ApprovalDecision(BaseModel):
     approved: bool
     reason: str | None = None
