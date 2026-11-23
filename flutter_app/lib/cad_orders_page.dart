@@ -7,6 +7,7 @@ import 'qc_orders_page.dart';
 
 const _tabs = <(String, String)>[
   ('', 'All orders'),
+  ('document_review', 'Document review'),
   ('plan_pending', 'Unassigned'),
   ('planning_in_progress', 'Planning in progress'),
   ('mine', 'My orders'),

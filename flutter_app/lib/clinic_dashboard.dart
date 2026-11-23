@@ -190,7 +190,7 @@ class _ClinicDashboardState extends State<ClinicDashboard> {
       Text('Case progress', style: Theme.of(context).textTheme.titleLarge),
       Wrap(spacing: 8, children: [
         for (final item in [
-          ('scanner', 'Scanner review'),
+          ('scanner', 'Document preparation'),
           ('planning', 'Planning'),
           ('approval', 'Awaiting approval'),
           ('revision', 'Revision'),

@@ -23,9 +23,20 @@ class _ScannerChecklistState extends State<ScannerChecklist> {
   List get items => widget.order['checklist'] as List? ?? [];
   bool get pending =>
       ['scanner_review', 'scanner_missing'].contains(widget.order['status']);
-  bool get canEdit => pending && ['marketing', 'scanner'].contains(widget.role);
+  bool get canEdit =>
+      pending &&
+      widget.order['can_prepare_documents'] != false &&
+      ['marketing', 'scanner', 'clinic_admin'].contains(widget.role);
+  bool get reviewing =>
+      widget.role == 'planning' &&
+      widget.order['status'] == 'planner_document_review';
+  final flagged = <String>{};
   String get base => '/api/orders/${widget.order['order_id']}';
-  bool ready(Map item) => item['waiver'] != null || item['verified'] == true;
+  bool ready(Map item) =>
+      item['waiver'] != null ||
+      (item['document_ids'] as List).toSet().length >= item['min_files'] ||
+      (item['allow_text'] == true &&
+          (item['text'] as String).trim().isNotEmpty);
 
   Future<void> run(Future<void> Function() task) async {
     setState(() {
@@ -131,8 +142,12 @@ class _ScannerChecklistState extends State<ScannerChecklist> {
   @override
   Widget build(BuildContext context) {
     final completed = items.where((i) => ready(i as Map)).length;
-    final approved = widget.order['scanner_approval'] as Map?;
+    final approved = (widget.order['planner_document_approval'] ??
+        widget.order['scanner_approval']) as Map?;
     final request = widget.order['missing_request'] as Map?;
+    final raisedIssues = (widget.order['scanner_history'] as List? ?? [])
+        .map((event) => event['details']?['missing_request'])
+        .whereType<Map>();
     return Card(
         child: Padding(
             padding: const EdgeInsets.all(16),
@@ -141,8 +156,12 @@ class _ScannerChecklistState extends State<ScannerChecklist> {
                 children: [
                   Text('Required items — $completed of ${items.length}',
                       style: Theme.of(context).textTheme.titleLarge),
-                  const Text(
-                      'Add files in Documents below, select them for each item, then verify the checklist.'),
+                  if (canEdit)
+                    const Text(
+                        'Upload files in Documents, map them to the checklist, then submit for planner review.'),
+                  if (reviewing)
+                    const Text(
+                        'Review the mapped files. Select any items that need correction.'),
                   if (request != null)
                     Padding(
                         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -161,21 +180,17 @@ class _ScannerChecklistState extends State<ScannerChecklist> {
                             children: [
                               Row(children: [
                                 Checkbox(
-                                    value: ready(item as Map),
-                                    onChanged: !busy &&
-                                            pending &&
-                                            widget.role == 'scanner' &&
-                                            item['waiver'] == null
-                                        ? (value) => run(() async {
-                                              await widget.api.request(
-                                                  'PUT',
-                                                  '$base/checklist/${item['id']}',
-                                                  {
-                                                    'document_ids':
-                                                        item['document_ids'],
-                                                    'text': item['text'],
-                                                    'verified': value
-                                                  });
+                                    value: reviewing
+                                        ? flagged.contains(item['id'])
+                                        : ready(item as Map),
+                                    onChanged: reviewing && !busy
+                                        ? (value) => setState(() {
+                                              if (value == true) {
+                                                flagged
+                                                    .add(item['id'] as String);
+                                              } else {
+                                                flagged.remove(item['id']);
+                                              }
                                             })
                                         : null),
                                 Expanded(
@@ -191,7 +206,7 @@ class _ScannerChecklistState extends State<ScannerChecklist> {
                                                         as int) ||
                                                 (item['text'] as String)
                                                     .isNotEmpty)
-                                            ? 'Awaiting review'
+                                            ? 'Mapped'
                                             : 'Missing'),
                               ]),
                               Text(
@@ -241,7 +256,7 @@ class _ScannerChecklistState extends State<ScannerChecklist> {
                               ]),
                               const Divider(),
                             ])),
-                  if (pending && widget.role == 'scanner')
+                  if (canEdit)
                     Wrap(spacing: 12, runSpacing: 8, children: [
                       FilledButton(
                           onPressed: busy ||
@@ -251,37 +266,55 @@ class _ScannerChecklistState extends State<ScannerChecklist> {
                               ? null
                               : () => run(() async {
                                     await widget.api.request(
-                                        'POST', '$base/scanner/approve');
+                                        'POST', '$base/document-review/submit');
                                   }),
-                          child: const Text('Approve and send to Planning')),
+                          child: const Text('Submit for planner review')),
+                    ]),
+                  if (reviewing)
+                    Wrap(spacing: 12, children: [
+                      FilledButton(
+                          onPressed: busy || flagged.isNotEmpty
+                              ? null
+                              : () => run(() async {
+                                    await widget.api.request('POST',
+                                        '$base/document-review/approve', {
+                                      'revision':
+                                          widget.order['review_revision']
+                                    });
+                                  }),
+                          child: const Text('Approve documents')),
                       OutlinedButton(
-                          onPressed: busy
+                          onPressed: busy || flagged.isEmpty
                               ? null
                               : () async {
                                   final note = await ask(
-                                      'Request missing items from Marketing');
+                                      'Describe the required corrections');
                                   if (note != null) {
                                     await run(() async {
-                                      await widget.api.request(
-                                          'POST',
-                                          '$base/scanner/request-missing',
-                                          {'note': note});
+                                      await widget.api.request('POST',
+                                          '$base/document-review/issues', {
+                                        'note': note,
+                                        'item_ids': flagged.toList(),
+                                        'revision':
+                                            widget.order['review_revision']
+                                      });
+                                      flagged.clear();
                                     });
                                   }
                                 },
-                          child: const Text('Request missing items')),
+                          child: const Text('Raise issues')),
                     ]),
-                  if ((widget.order['scanner_history'] as List? ?? [])
-                      .isNotEmpty)
+                  if (raisedIssues.isNotEmpty)
                     ExpansionTile(
-                        title: const Text('Scanner review history'),
+                        title: const Text('Issues raised'),
                         children: [
-                          for (final event
-                              in widget.order['scanner_history'] as List)
+                          for (final issue in raisedIssues)
                             ListTile(
-                                title:
-                                    Text('${event['action']} — ${event['by']}'),
-                                subtitle: Text('${event['at']}')),
+                                title: Text('${issue['note']}'),
+                                subtitle: Text([
+                                  (issue['items'] as List).join(', '),
+                                  "${issue['by']} • ${issue['at']}"
+                                ].join('\n'))),
                         ]),
                 ])));
   }

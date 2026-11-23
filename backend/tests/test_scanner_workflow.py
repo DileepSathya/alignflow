@@ -13,6 +13,7 @@ from app import main
 SCANNER = {'id': 12, 'name': 'Scanner', 'role': 'scanner'}
 MARKETING = {'id': 13, 'name': 'Marketing', 'role': 'marketing'}
 ADMIN = {'id': 1, 'name': 'Admin', 'role': 'admin'}
+PLANNER = {'id': 20, 'name': 'Planner', 'role': 'planning'}
 
 class ScannerTests(unittest.TestCase):
     def setUp(self):
@@ -53,10 +54,11 @@ class ScannerTests(unittest.TestCase):
     def test_marketing_cannot_verify_or_approve(self):
         self.assert_status(403, main.update_checklist, self.doc['order_id'], 'upper_arch',
                            main.ChecklistInput(verified=True), user=MARKETING)
-        self.assert_status(403, main.approve_scanner, self.doc['order_id'], user=MARKETING)
+        self.assert_status(403, main.approve_documents, self.doc['order_id'],
+                           main.DocumentDecision(revision=0), user=MARKETING)
 
     def test_incomplete_order_cannot_be_approved(self):
-        self.assert_status(409, main.approve_scanner, self.doc['order_id'], user=SCANNER)
+        self.assert_status(409, main.submit_documents, self.doc['order_id'], user=SCANNER)
 
     def test_photo_count_and_duplicate_ids(self):
         item = self.doc['checklist'][3]
@@ -67,7 +69,7 @@ class ScannerTests(unittest.TestCase):
         self.assertTrue(main.item_ready(item, self.doc))
 
     def test_wrong_type_and_foreign_files_rejected(self):
-        self.doc['documents'] = [{'id': 'a', 'name': 'scan.pdf'}]
+        self.doc['documents'] = [{'id': 'a', 'name': 'scan.txt'}]
         for ids in [['a'], ['foreign']]:
             self.assert_status(422, main.update_checklist, self.doc['order_id'], 'upper_arch',
                                main.ChecklistInput(document_ids=ids), user=SCANNER)
@@ -78,11 +80,13 @@ class ScannerTests(unittest.TestCase):
         self.assertTrue(result['order']['checklist'][-1]['verified'])
         self.assertEqual(result['order']['checklist'][-1]['verified_by'], 'Scanner')
 
-    def test_admin_exception_then_scanner_approval(self):
+    def test_admin_exception_then_planner_approval(self):
         for item in self.doc['checklist']:
             main.update_checklist(self.doc['order_id'], item['id'],
                 main.ChecklistInput(waiver_reason='Approved clinical exception'), user=ADMIN)
-        result = main.approve_scanner(self.doc['order_id'], user=SCANNER)['order']
+        main.submit_documents(self.doc['order_id'], user=SCANNER)
+        result = main.approve_documents(self.doc['order_id'],
+            main.DocumentDecision(revision=self.doc['review_revision']), user=PLANNER)['order']
         self.assertEqual(result['status'], 'submitted')
         self.assertTrue(result['scanner_approved'])
         self.assertEqual(result['history'][-1]['status'], 'submitted')
@@ -164,9 +168,28 @@ class ScannerTests(unittest.TestCase):
                 ids.append(key)
             main.update_checklist(self.doc['order_id'], item['id'],
                                   main.ChecklistInput(document_ids=ids, verified=True), user=SCANNER)
-        result = main.approve_scanner(self.doc['order_id'], user=SCANNER)['order']
+        order_id = self.doc['order_id']
+        self.doc['clinic_id'] = 14
+        self.doc['clinician_id'] = 5
+        clinician = {'id': 4, 'name': 'Doctor', 'role': 'clinic_admin', 'clinic_id': 14, 'clinician_id': 5}
+        first = main.submit_documents(order_id, user=MARKETING)['order']
+        self.assertEqual(main.get_order(order_id, PLANNER)['status'], main.DOCUMENT_REVIEW)
+        issue = main.DocumentIssues(revision=first['review_revision'], item_ids=['requirements'],
+                                    note='Please clarify the requirements')
+        main.raise_document_issues(order_id, issue, user=PLANNER)
+        self.assert_status(409, main.submit_documents, order_id, user=clinician)
+        edit = main.ChecklistInput(text='Updated instructions')
+        self.assert_status(403, main.update_checklist, order_id, 'requirements', edit,
+                           user={**clinician, 'clinician_id': 8})
+        self.assert_status(404, main.update_checklist, order_id, 'requirements', edit,
+                           user={**clinician, 'clinic_id': 99})
+        main.update_checklist(order_id, 'requirements', edit, user=clinician)
+        second = main.submit_documents(order_id, user=clinician)['order']
+        self.assert_status(409, main.approve_documents, order_id, issue, user=PLANNER)
+        result = main.approve_documents(order_id,
+            main.DocumentDecision(revision=second['review_revision']), user=PLANNER)['order']
         self.assertEqual(result['status'], 'submitted')
-        self.assertEqual(result['scanner_approval']['user_id'], SCANNER['id'])
+        self.assertEqual(result['planner_document_approval']['user_id'], PLANNER['id'])
 
     def test_legacy_migration_targets_only_unassigned_unapproved_submissions(self):
         collection = MagicMock()

@@ -7,8 +7,9 @@ import 'api.dart';
 import 'demo_style.dart';
 
 const _statuses = <String, String>{
-  'scanner_review': 'Scanner review',
-  'scanner_missing': 'Missing items',
+  'scanner_review': 'Preparing documents',
+  'scanner_missing': 'Document corrections requested',
+  'planner_document_review': 'Planner document review',
   'submitted': 'Ready for Planning',
   'planning_in_progress': 'Planning in progress',
   'plan_completed': 'Clinician review pending',
@@ -26,8 +27,10 @@ String orderStatusLabel(Object? status) =>
     _statuses[status] ?? status?.toString() ?? '';
 
 const _progressSteps = <(String, String)>[
-  ('scanner_review', 'Scanner review'),
-  ('submitted', 'Scanner approved'),
+  ('scanner_review', 'Preparing documents'),
+  ('planner_document_review', 'Planner document review'),
+  ('scanner_missing', 'Document corrections requested'),
+  ('submitted', 'Documents approved'),
   ('planning_in_progress', 'Planning in progress'),
   ('plan_completed', 'Plan completed'),
   ('plan_completed', 'Clinician review pending'),
@@ -1127,6 +1130,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                     [
                       'scanner_review',
                       'scanner_missing',
+                      'planner_document_review',
                       'submitted',
                       'planning_in_progress',
                       'plan_completed',

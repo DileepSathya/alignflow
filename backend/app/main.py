@@ -261,13 +261,19 @@ def current_user(request: Request, authorization: str | None = Header(default=No
         allowed_get = path in {'/api/me', '/api/my-clinic', '/api/my-clinic/overview', '/api/orders', '/api/patients'} or path.startswith('/api/orders/')
         order_action = path.startswith('/api/orders/') and path.split('/')[-1] in {'issues', 'status', 'documents'}
         allowed_post = path in {'/api/logout', '/api/my-clinic/clinicians', '/api/orders'} or order_action
-        if not ((request.method == 'GET' and allowed_get) or (request.method == 'POST' and allowed_post)):
+        route = request.scope.get("route")
+        template = getattr(route, "path", "")
+        checklist_edit = request.method == "PUT" and template == "/api/orders/{order_id}/checklist/{item_id}"
+        review_submit = request.method == "POST" and template == "/api/orders/{order_id}/document-review/submit"
+        if not (checklist_edit or review_submit or (request.method == 'GET' and allowed_get) or (request.method == 'POST' and allowed_post)):
             raise HTTPException(status_code=403, detail='Clinic access is restricted')
         with conn.cursor() as cur:
-            cur.execute('SELECT approval_status FROM clinics WHERE id=%s', (user['clinic_id'],))
+            cur.execute('SELECT c.approval_status, p.clinician_id FROM clinics c LEFT JOIN clinicians p '
+                        'ON p.clinic_id=c.id AND p.account_id=%s WHERE c.id=%s', (user['id'], user['clinic_id']))
             clinic = cur.fetchone()
         if clinic is None or clinic['approval_status'] != 'approved':
             raise HTTPException(status_code=403, detail='Clinic approval required')
+        user["clinician_id"] = clinic.get("clinician_id")
     return user
 
 
@@ -647,11 +653,13 @@ def now():
 
 
 SCANNER_STEPS = ["scanner_review", "scanner_missing"]
+PREPARERS = {"marketing", "clinic_admin", "scanner"}
+DOCUMENT_REVIEW = "planner_document_review"
 
 
 def planning_visibility():
     return {"status": {"$nin": SCANNER_STEPS}, "$or": [
-        {"checklist": {"$exists": False}}, {"scanner_approved": True}]}
+        {"status": DOCUMENT_REVIEW}, {"checklist": {"$exists": False}}, {"scanner_approved": True}]}
 
 
 def new_checklist():
@@ -708,8 +716,15 @@ def save_scanner_change(doc, fields, user, action):
     return {"order": public_order(updated)}
 
 
+def can_prepare_documents(doc, user):
+    return user["role"] in PREPARERS and (user["role"] != "clinic_admin" or
+        (user.get("clinician_id") is not None and user["clinician_id"] == doc.get("clinician_id")))
+
+
 def scanner_review_order(order_id, user):
     doc = get_order(order_id, user)
+    if user["role"] == "clinic_admin" and not can_prepare_documents(doc, user):
+        raise HTTPException(status_code=403, detail="Only the case clinician can map these documents")
     if doc["status"] not in SCANNER_STEPS:
         raise HTTPException(status_code=409, detail="Order is not awaiting scanner review")
     return doc
@@ -722,7 +737,7 @@ def checklist_config(user=Depends(current_user)):
 
 @app.put("/api/orders/{order_id}/checklist/{item_id}")
 def update_checklist(order_id: str, item_id: str, body: ChecklistInput, user=Depends(current_user)):
-    if user["role"] not in {"marketing", "scanner", "admin"}:
+    if user["role"] not in PREPARERS | {"admin"}:
         raise HTTPException(status_code=403, detail="Team cannot edit checklist")
     doc = scanner_review_order(order_id, user)
     checklist = deepcopy(doc["checklist"])
@@ -761,6 +776,8 @@ def request_missing(order_id: str, body: MissingItemsInput, user=Depends(current
     doc = scanner_review_order(order_id, user)
     if not body.note.strip():
         raise HTTPException(status_code=422, detail="Enter a note for Marketing")
+    if (doc.get("missing_request") or {}).get("mappings"):
+        raise HTTPException(status_code=409, detail="Planner corrections are pending")
     missing = [i["label"] for i in doc["checklist"] if i["mandatory"] and
                not i.get("waiver") and not (i["verified"] and item_ready(i, doc))]
     if not missing:
@@ -770,16 +787,61 @@ def request_missing(order_id: str, body: MissingItemsInput, user=Depends(current
         user, "Requested missing items")
 
 
-@app.post("/api/orders/{order_id}/scanner/approve")
-def approve_scanner(order_id: str, user=Depends(current_user)):
-    if user["role"] != "scanner":
-        raise HTTPException(status_code=403, detail="Scanner team only")
+def mapping_snapshot(item):
+    return {"files": sorted(item["document_ids"]), "text": item["text"], "waiver": item.get("waiver")}
+
+
+@app.post("/api/orders/{order_id}/document-review/submit")
+def submit_documents(order_id: str, user=Depends(current_user)):
+    if user["role"] not in PREPARERS:
+        raise HTTPException(status_code=403, detail="Document preparer required")
     doc = scanner_review_order(order_id, user)
-    if any(i["mandatory"] and not i.get("waiver") and
-           not (i["verified"] and item_ready(i, doc)) for i in doc["checklist"]):
-        raise HTTPException(status_code=409, detail="Complete the mandatory checklist first")
+    previous = (doc.get("missing_request") or {}).get("mappings", {})
+    for item in doc["checklist"]:
+        if item["mandatory"] and not item.get("waiver") and not item_ready(item, doc):
+            raise HTTPException(status_code=409, detail="Complete " + item["label"])
+        if previous.get(item["id"]) == mapping_snapshot(item):
+            raise HTTPException(status_code=409, detail="Correct " + item["label"])
+    return save_scanner_change(doc, {"status": DOCUMENT_REVIEW, "missing_request": None},
+                               user, "Submitted documents for planner review")
+
+
+class DocumentDecision(BaseModel):
+    revision: int
+
+
+class DocumentIssues(DocumentDecision):
+    item_ids: list[str]
+    note: str = Field(min_length=1, max_length=5000)
+
+
+def planner_review_order(order_id, user, revision):
+    if user["role"] != "planning":
+        raise HTTPException(status_code=403, detail="Planner required")
+    doc = get_order(order_id, user)
+    if doc["status"] != DOCUMENT_REVIEW or doc.get("review_revision") != revision:
+        raise HTTPException(status_code=409, detail="Review changed. Reload the case.")
+    return doc
+
+
+@app.post("/api/orders/{order_id}/document-review/issues")
+def raise_document_issues(order_id: str, body: DocumentIssues, user=Depends(current_user)):
+    doc = planner_review_order(order_id, user, body.revision)
+    selected = [i for i in doc["checklist"] if i["id"] in body.item_ids]
+    if not selected or len(selected) != len(set(body.item_ids)) or not body.note.strip():
+        raise HTTPException(status_code=422, detail="Select items and describe the correction")
+    request = {"items": [i["label"] for i in selected], "note": body.note.strip(),
+               "mappings": {i["id"]: mapping_snapshot(i) for i in selected},
+               "by": user["name"], "at": now().isoformat()}
+    return save_scanner_change(doc, {"status": "scanner_missing", "missing_request": request},
+                               user, "Requested document corrections")
+
+
+@app.post("/api/orders/{order_id}/document-review/approve")
+def approve_documents(order_id: str, body: DocumentDecision, user=Depends(current_user)):
+    doc = planner_review_order(order_id, user, body.revision)
     return save_scanner_change(doc, {"status": "submitted", "scanner_approved": True,
-        "scanner_approval": {"by": user["name"], "user_id": user["id"], "at": now().isoformat()}},
+        "planner_document_approval": {"by": user["name"], "user_id": user["id"], "at": now().isoformat()}},
         user, "Approved for Planning")
 
 
@@ -804,7 +866,7 @@ def get_order(order_id: str, user: dict):
     if doc is None or (user['role'] == 'clinic_admin' and doc.get('clinic_id') != user['clinic_id']) or (user["role"] == "production" and
                        doc["status"] not in VISIBLE_PRODUCTION_STEPS):
         raise HTTPException(status_code=404, detail="Order not found")
-    if user["role"] == "planning" and (doc["status"] in SCANNER_STEPS or
+    if user["role"] == "planning" and doc["status"] != DOCUMENT_REVIEW and (doc["status"] in SCANNER_STEPS or
             ("checklist" in doc and not doc.get("scanner_approved"))):
         raise HTTPException(status_code=404, detail="Order not found")
     return doc
@@ -948,9 +1010,9 @@ def marketing_performance(year: int, month: int, user=Depends(admin_user), conn=
 
 
 CLINIC_GROUPS = {
-    "active": SCANNER_STEPS + ORDER_STEPS[:-1],
+    "active": SCANNER_STEPS + [DOCUMENT_REVIEW] + ORDER_STEPS[:-1],
     "scanner": SCANNER_STEPS,
-    "planning": ["submitted", "planning_in_progress"],
+    "planning": [DOCUMENT_REVIEW, "submitted", "planning_in_progress"],
     "approval": ["plan_completed"],
     "revision": ["clinician_issues"],
     "manufacturing": ["clinician_approved", "manufacturing_in_process"],
@@ -1036,6 +1098,7 @@ def list_orders(q: str = "", status_filter: str = "", status_group: str = "", vi
         query["status"] = {"$in": VISIBLE_PRODUCTION_STEPS}
     if status_group:
         cad_groups = {
+            "document_review": [DOCUMENT_REVIEW],
             "plan_pending": ["submitted"],
             "planning_in_progress": ["planning_in_progress"],
             "clinical_approval_pending": ["plan_completed"],
@@ -1111,6 +1174,7 @@ def cad_overview(user=Depends(current_user)):
                    {"$sort": {"name": 1}},
                ])]
     return {"all_orders": sum(statuses.values()),
+            "document_review": statuses.get(DOCUMENT_REVIEW, 0),
             "plan_pending": statuses.get("submitted", 0),
             "planning_in_progress": statuses.get("planning_in_progress", 0),
             "clinical_approval_pending": statuses.get("plan_completed", 0),
@@ -1200,7 +1264,8 @@ def admin_overview(admin=Depends(admin_user), conn=Depends(connection)):
 
 @app.get("/api/orders/{order_id}")
 def order_detail(order_id: str, user=Depends(current_user)):
-    return {"order": public_order(get_order(order_id, user))}
+    doc = get_order(order_id, user)
+    return {"order": {**public_order(doc), "can_prepare_documents": can_prepare_documents(doc, user)}}
 
 
 @app.put("/api/orders/{order_id}/patient")
@@ -1323,7 +1388,7 @@ def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
     if target == "cancelled":
         if user["role"] not in {"marketing", "clinic_admin"}:
             raise HTTPException(status_code=403, detail="Marketing or clinic admin only")
-        if doc["status"] not in ORDER_STEPS[:4] + SCANNER_STEPS:
+        if doc["status"] not in ORDER_STEPS[:4] + SCANNER_STEPS + [DOCUMENT_REVIEW]:
             raise HTTPException(status_code=409, detail="Order cannot be cancelled after clinician approval")
     else:
         legacy_review_reset = (target == "plan_completed" and doc["status"] == "clinician_issues"
@@ -1369,8 +1434,8 @@ async def upload_order_document(order_id: str, file: UploadFile = File(...), use
     if not isinstance(checklist_id, str):
         checklist_id = ""
     if checklist_id:
-        if user["role"] not in {"marketing", "scanner"} or doc["status"] not in SCANNER_STEPS:
-            raise HTTPException(status_code=403, detail="Checklist uploads require Marketing or Scanner before approval")
+        if not can_prepare_documents(doc, user) or doc["status"] not in SCANNER_STEPS:
+            raise HTTPException(status_code=403, detail="Checklist uploads require an editable case and a document preparer")
         item = next((i for i in doc.get("checklist", []) if i["id"] == checklist_id), None)
         if item is None or Path(file.filename or "").suffix.lower() not in item["extensions"]:
             raise HTTPException(status_code=400, detail="File type does not match the checklist item")

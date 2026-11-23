@@ -18,8 +18,8 @@ void main() {
             'id': 'custom',
             'label': 'Developer configured item',
             'mandatory': true,
-            'min_files': 2,
-            'extensions': ['.pdf'],
+            'min_files': 1,
+            'extensions': ['.stl'],
             'allow_text': false,
             'document_ids': selected ? ['file-1'] : [],
             'text': '',
@@ -40,19 +40,19 @@ void main() {
                     onChanged: () async {})))));
   }
 
-  testWidgets('renders configured items and blocks incomplete scanner approval',
+  testWidgets('renders configured items and blocks incomplete submission',
       (tester) async {
     await show(tester, 'scanner');
     expect(find.text('Developer configured item *'), findsOneWidget);
     expect(find.text('Upload missing files'), findsNothing);
     final approve = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'Approve and send to Planning'));
+        find.widgetWithText(FilledButton, 'Submit for planner review'));
     expect(approve.onPressed, isNull);
   });
-  testWidgets('verified checklist enables scanner approval', (tester) async {
-    await show(tester, 'scanner', verified: true);
+  testWidgets('clinician can submit mapped documents', (tester) async {
+    await show(tester, 'clinic_admin', selected: true);
     final approve = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'Approve and send to Planning'));
+        find.widgetWithText(FilledButton, 'Submit for planner review'));
     expect(approve.onPressed, isNotNull);
   });
   testWidgets('selected files appear by name under the required item',
