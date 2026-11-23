@@ -411,6 +411,8 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
   late final requestId =
       '${DateTime.now().microsecondsSinceEpoch}-${Random.secure().nextInt(0x7fffffff)}-${Random.secure().nextInt(0x7fffffff)}';
   List<PlatformFile> attachments = [];
+  String? createdOrderId;
+  int uploadedCount = 0;
   @override
   void dispose() {
     name.dispose();
@@ -451,7 +453,7 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
       error = null;
     });
     try {
-      final result = await widget.api.request('POST', '/api/orders', {
+      final result = createdOrderId == null ? await widget.api.request('POST', '/api/orders', {
         'request_id': requestId,
         'patient_name': name.text.trim(),
         'patient_mobile_number': mobile.text.trim(),
@@ -463,14 +465,17 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
         'age': parsedAge,
         'clinic_id': clinicId,
         'notes': notes.text.trim(),
-      });
-      final orderId = (result['order'] as Map)['order_id'] as String;
-      for (final file in attachments) {
-        await widget.api.uploadOrderFile(orderId, file);
+      }) : null;
+      createdOrderId ??= (result!['order'] as Map)['order_id'] as String;
+      while (uploadedCount < attachments.length) {
+        await widget.api.uploadOrderFile(createdOrderId!, attachments[uploadedCount]);
+        uploadedCount++;
       }
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
-      if (mounted) setState(() => error = e.toString());
+      if (mounted) setState(() => error = createdOrderId == null
+          ? e.toString()
+          : 'Order $createdOrderId was created. ${attachments.length - uploadedCount} file(s) still need uploading. Retry to continue. $e');
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -679,6 +684,7 @@ class OrderDetailPage extends StatefulWidget {
 
 class _OrderDetailPageState extends State<OrderDetailPage> {
   Map<String, dynamic>? order;
+  List<dynamic> planners = [];
   String? error;
   final comment = TextEditingController();
   bool busy = false;
@@ -686,6 +692,17 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
   void initState() {
     super.initState();
     refresh();
+    if (widget.role == 'admin') loadPlanners();
+  }
+
+  Future<void> loadPlanners() async {
+    try {
+      final result = await widget.api.request('GET', '/api/users');
+      if (mounted) setState(() => planners =
+          (result['users'] as List<dynamic>).where((user) => user['role'] == 'planning').toList());
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
+    }
   }
 
   @override
@@ -1158,7 +1175,30 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                           : () => action('POST',
                               '/api/orders/${widget.orderId}/assign', {}),
                       child: const Text('Assign to me')),
-                if (widget.role == 'planning' &&
+                if (widget.role == 'admin' && data['status'] == 'submitted' &&
+                    data['assigned_planner'] == null)
+                  Wrap(spacing: 8, children: [
+                    FilledButton(
+                      onPressed: busy || widget.userId == null ? null : () => action(
+                        'POST', '/api/admin/orders/${widget.orderId}/assign',
+                        {'user_id': widget.userId}),
+                      child: const Text('Assign to me')),
+                    PopupMenuButton<int>(
+                      enabled: !busy && planners.isNotEmpty,
+                      tooltip: 'Assign to planner',
+                      onSelected: (id) => action(
+                        'POST', '/api/admin/orders/${widget.orderId}/assign',
+                        {'user_id': id}),
+                      itemBuilder: (_) => [
+                        for (final planner in planners)
+                          PopupMenuItem<int>(value: planner['id'] as int,
+                            child: Text(planner['name'].toString())),
+                      ],
+                      child: const Padding(padding: EdgeInsets.all(10),
+                        child: Text('Assign to planner')),
+                    ),
+                  ]),
+                if (['planning', 'admin'].contains(widget.role) &&
                     !widget.qcMode &&
                     data['status'] == 'planning_in_progress' &&
                     (data['assigned_planner'] as Map?)?['id'] == widget.userId)

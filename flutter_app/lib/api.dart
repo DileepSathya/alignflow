@@ -133,12 +133,23 @@ class Api {
     if (checklistId != null) request.fields['checklist_id'] = checklistId;
     request.files
         .add(http.MultipartFile.fromBytes('file', bytes, filename: file.name));
-    final response = await request.send();
-    final body = jsonDecode(await response.stream.bytesToString())
-        as Map<String, dynamic>;
-    if (response.statusCode >= 300)
-      throw ApiException(body['detail']?.toString() ?? 'Upload failed.');
-    return body;
+    try {
+      final response = await request.send().timeout(const Duration(minutes: 2));
+      final body = jsonDecode(await response.stream.bytesToString())
+          as Map<String, dynamic>;
+      if (response.statusCode >= 300) {
+        throw ApiException(body['detail']?.toString() ?? 'Upload failed.');
+      }
+      return body;
+    } on ApiException {
+      rethrow;
+    } on SocketException {
+      throw ApiException('Connection lost while uploading the file. Check the PC and Wi-Fi.');
+    } on http.ClientException {
+      throw ApiException('Connection lost while uploading the file. Check the PC and Wi-Fi.');
+    } on TimeoutException {
+      throw ApiException('File upload timed out. Check the PC and Wi-Fi.');
+    }
   }
 
   Future<List<int>> downloadOrderFile(String orderId, String fileId) async {

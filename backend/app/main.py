@@ -390,7 +390,8 @@ def logout(authorization: str = Header(), user=Depends(current_user), conn=Depen
 @app.get("/api/users")
 def list_users(admin=Depends(admin_user), conn=Depends(connection)):
     with conn.cursor() as cur:
-        cur.execute("SELECT id, username, name, role, created_at FROM users ORDER BY created_at DESC, id DESC")
+        cur.execute("SELECT id, username, name, role, created_at FROM users "
+                    "WHERE role <> 'clinic_admin' ORDER BY created_at DESC, id DESC")
         return {"users": cur.fetchall()}
 
 
@@ -416,7 +417,7 @@ def create_user(body: UserInput, admin=Depends(admin_user), conn=Depends(connect
 @app.patch("/api/users/{user_id}")
 def update_user(user_id: int, body: UserUpdate, admin=Depends(admin_user), conn=Depends(connection)):
     with conn.cursor() as cur:
-        cur.execute("SELECT role FROM users WHERE id = %s", (user_id,))
+        cur.execute("SELECT role FROM users WHERE id = %s AND role <> 'clinic_admin'", (user_id,))
         user = cur.fetchone()
         if user is None:
             raise HTTPException(status_code=404, detail="User not found")
@@ -443,7 +444,7 @@ def update_user(user_id: int, body: UserUpdate, admin=Depends(admin_user), conn=
 @app.delete("/api/users/{user_id}", status_code=204)
 def delete_user(user_id: int, admin=Depends(admin_user), conn=Depends(connection)):
     with conn.cursor() as cur:
-        cur.execute("SELECT role FROM users WHERE id = %s", (user_id,))
+        cur.execute("SELECT role FROM users WHERE id = %s AND role <> 'clinic_admin'", (user_id,))
         user = cur.fetchone()
         if user is None:
             raise HTTPException(status_code=404, detail="User not found")
@@ -816,8 +817,8 @@ class DocumentIssues(DocumentDecision):
 
 
 def planner_review_order(order_id, user, revision):
-    if user["role"] != "planning":
-        raise HTTPException(status_code=403, detail="Planner required")
+    if user["role"] not in {"planning", "admin"}:
+        raise HTTPException(status_code=403, detail="Planner or admin required")
     doc = get_order(order_id, user)
     if doc["status"] != DOCUMENT_REVIEW or doc.get("review_revision") != revision:
         raise HTTPException(status_code=409, detail="Review changed. Reload the case.")
@@ -1086,7 +1087,7 @@ def list_orders(q: str = "", status_filter: str = "", status_group: str = "", vi
     if scanner_missing:
         query["status"] = {"$in": SCANNER_STEPS}
         query["checklist"] = {"$elemMatch": {"mandatory": True, "verified": False, "waiver": None}}
-    if mine and user["role"] != "planning":
+    if mine and user["role"] not in {"planning", "admin"}:
         raise HTTPException(status_code=403, detail="Planning team only")
     if mine:
         query["assigned_planner.id"] = user["id"]
@@ -1121,6 +1122,7 @@ def list_orders(q: str = "", status_filter: str = "", status_group: str = "", vi
             "qc_approval_completed": ["qc_approved", "manufacture_completed"],
         }
         groups = ({**cad_groups, **qc_groups} if user["role"] == "planning" else
+                  cad_groups if user["role"] == "admin" else
                   lab_groups if user["role"] == "production" else CLINIC_GROUPS if user["role"] == "clinic_admin" else {})
         if status_group not in groups:
             raise HTTPException(status_code=400, detail="Invalid status group")
@@ -1250,7 +1252,7 @@ def admin_overview(admin=Depends(admin_user), conn=Depends(connection)):
     statuses = {row["_id"]: row["count"] for row in rows}
     open_issues = sum(row["open_issues"] for row in rows)
     with conn.cursor() as cur:
-        cur.execute("SELECT COUNT(*) AS count FROM users")
+        cur.execute("SELECT COUNT(*) AS count FROM users WHERE role <> 'clinic_admin'")
         users = cur.fetchone()["count"]
     return {"total_orders": sum(statuses.values()), "users": users,
             "in_plan": sum(statuses.get(key, 0) for key in
@@ -1379,6 +1381,32 @@ def assign_order(order_id: str, user=Depends(current_user)):
         raise HTTPException(status_code=409, detail="Order already assigned or unavailable")
     return {"order": public_order(updated)}
 
+
+class AdminAssignment(BaseModel):
+    user_id: int
+
+
+@app.post("/api/admin/orders/{order_id}/assign")
+def admin_assign_order(order_id: str, body: AdminAssignment, admin=Depends(admin_user), conn=Depends(connection)):
+    if body.user_id == admin["id"]:
+        assignee = admin
+    else:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, name, role FROM users WHERE id = %s", (body.user_id,))
+            assignee = cur.fetchone()
+        if assignee is None or assignee["role"] != "planning":
+            raise HTTPException(status_code=400, detail="Select a planning team member")
+    timestamp = now()
+    updated = order_store().find_one_and_update(
+        {"order_id": order_id, "status": "submitted", "assigned_planner": None, "scanner_approved": True},
+        {"$set": {"status": "planning_in_progress", "assigned_planner": {"id": assignee["id"], "name": assignee["name"]},
+                  "assigned_at": timestamp, "assigned_by": {"id": admin["id"], "name": admin["name"]}, "updated_at": timestamp},
+         "$push": {"history": {"status": "planning_in_progress", "at": timestamp, "by": admin["name"]}}},
+        return_document=ReturnDocument.AFTER)
+    if updated is None:
+        raise HTTPException(status_code=409, detail="Order already assigned or unavailable")
+    return {"order": public_order(updated)}
+
 @app.post("/api/orders/{order_id}/status")
 def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
     doc = get_order(order_id, user)
@@ -1394,7 +1422,8 @@ def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
         legacy_review_reset = (target == "plan_completed" and doc["status"] == "clinician_issues"
                                and user["role"] in {"marketing", "clinic_admin"} and not doc["issues"])
         clinical_approval = target == "clinician_approved" and user["role"] in {"marketing", "clinic_admin"}
-        if not legacy_review_reset and not clinical_approval and (target not in STATUS_ROLES or user["role"] != STATUS_ROLES[target]):
+        admin_plan = target == "plan_completed" and user["role"] == "admin" and (doc.get("assigned_planner") or {}).get("id") == user["id"]
+        if not legacy_review_reset and not clinical_approval and not admin_plan and (target not in STATUS_ROLES or user["role"] != STATUS_ROLES[target]):
             raise HTTPException(status_code=403, detail="Team cannot set this status")
         allowed = (legacy_review_reset or
                    (doc["status"] == "planning_in_progress" and target == "plan_completed") or

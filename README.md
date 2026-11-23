@@ -11,6 +11,19 @@ Flutter web and Android client with a FastAPI backend and a local PostgreSQL dat
 
 The Flutter project already contains `web/` and `android/`; do not run `flutter create` for normal builds.
 
+## Reset all application data
+
+Stop the backend before resetting. From PowerShell, run the script with the backend's Python environment:
+
+```powershell
+cd D:\Aligner_company\backend
+.\.venv312\Scripts\python.exe reset_data.py --confirm RESET-ALIGNFLOW-DATA
+```
+
+This permanently clears users, sessions, clinics, clinicians, patients, and patient-to-order links in the configured PostgreSQL database. It also clears orders, the order counter, and legacy GridFS files in the configured MongoDB database, then deletes uploaded files under the configured `DATA_DIR/orders` directory. Database tables and other collections remain. The script recreates the `admin` account with password `admin`, so change that password after signing in. It reads `DATABASE_URL`, `MONGODB_URL`, `MONGODB_DATABASE`, and `DATA_DIR` from `backend/.env`.
+
+Back up both databases and uploaded files before running it if you need any of the data. The reset spans separate storage systems, so an interruption can leave a partial reset. If that happens, stop the backend and rerun the same command before creating new orders.
+
 ## Start the backend and web app
 
 Double-click `run_application.bat` in the project root. It opens separate backend and Flutter web terminals. Keep both open while using the app. The web app opens in Chrome at <http://localhost:8080>; the API health check is <http://127.0.0.1:8000/health>. A `404` at the API root (`/`) is expected.

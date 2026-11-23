@@ -28,7 +28,7 @@ class _ScannerChecklistState extends State<ScannerChecklist> {
       widget.order['can_prepare_documents'] != false &&
       ['marketing', 'scanner', 'clinic_admin'].contains(widget.role);
   bool get reviewing =>
-      widget.role == 'planning' &&
+      ['planning', 'admin'].contains(widget.role) &&
       widget.order['status'] == 'planner_document_review';
   final flagged = <String>{};
   String get base => '/api/orders/${widget.order['order_id']}';
