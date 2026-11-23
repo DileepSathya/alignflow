@@ -283,6 +283,12 @@ def marketing_user(user=Depends(current_user)) -> dict:
     return user
 
 
+def clinic_manager(user=Depends(current_user)) -> dict:
+    if user['role'] not in ('marketing', 'admin'):
+        raise HTTPException(status_code=403, detail='Clinic management access required')
+    return user
+
+
 @app.post('/api/clinic-signup', status_code=201)
 def clinic_signup(body: ClinicSignup, conn=Depends(connection)):
     if '@' not in body.email or '@' not in body.clinician_email:
@@ -429,7 +435,7 @@ def delete_user(user_id: int, admin=Depends(admin_user), conn=Depends(connection
 
 
 @app.get("/api/clinics")
-def list_clinics(user=Depends(marketing_user), conn=Depends(connection)):
+def list_clinics(user=Depends(clinic_manager), conn=Depends(connection)):
     with conn.cursor() as cur:
         cur.execute("SELECT * FROM clinics ORDER BY clinic_name, id")
         clinics = cur.fetchall()
@@ -510,7 +516,7 @@ def clinic_with_clinicians(cur, clinic: dict) -> dict:
 
 
 @app.post("/api/clinics", status_code=status.HTTP_201_CREATED)
-def create_clinic(body: ClinicInput, user=Depends(marketing_user), conn=Depends(connection)):
+def create_clinic(body: ClinicInput, user=Depends(clinic_manager), conn=Depends(connection)):
     if not body.clinicians or not body.admin_username or not body.admin_password:
         raise HTTPException(status_code=400, detail='A clinic admin clinician, username and password are required')
     if not body.clinicians[0].email:

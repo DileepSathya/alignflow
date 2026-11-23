@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'api.dart';
+import 'marketing_page.dart';
 
 class ClinicApprovals extends StatefulWidget {
   final Api api;
@@ -19,11 +20,15 @@ class _ClinicApprovalsState extends State<ClinicApprovals> {
 
   Future<void> refresh() async {
     try {
-      final result =
-          await widget.api.request('GET', '/api/admin/clinic-approvals');
+      final result = await widget.api.request('GET', '/api/clinics');
       if (mounted)
         setState(() {
-          clinics = result['clinics'] as List;
+          clinics = (result['clinics'] as List)
+            ..sort((a, b) {
+              final aPending = a['approval_status'] == 'pending' ? 0 : 1;
+              final bPending = b['approval_status'] == 'pending' ? 0 : 1;
+              return aPending.compareTo(bPending);
+            });
           error = null;
         });
     } catch (e) {
@@ -65,15 +70,28 @@ class _ClinicApprovalsState extends State<ClinicApprovals> {
 
   @override
   Widget build(BuildContext context) => ListView(children: [
+        Padding(
+            padding: const EdgeInsets.all(12),
+            child: Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton.icon(
+                    onPressed: () async {
+                      final saved = await showDialog<bool>(
+                          context: context,
+                          builder: (_) => ClinicDialog(api: widget.api));
+                      if (saved == true) refresh();
+                    },
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add clinic')))),
         if (error != null) ListTile(title: Text(error!)),
         for (final item in clinics)
           Card(
               child: ListTile(
                   title: Text(item['clinic_name'].toString()),
                   subtitle: Text(
-                      '${item['area']} · ${item['email']} · ${item['contact_number']}\nAdmin: ${item['admin_name']} (${item['admin_username']}) · ${item['approval_status']}'),
+                      '${item['area']} · ${item['email']} · ${item['contact_number']}\n${item['approval_status'] ?? 'approved'}'),
                   isThreeLine: true,
-                  trailing: item['approval_status'] == 'pending'
+                  trailing: item['signup_source'] == 'self' && item['approval_status'] == 'pending'
                       ? Wrap(children: [
                           TextButton(
                               onPressed: () => decide(item['id'] as int, false),

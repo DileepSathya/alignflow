@@ -25,7 +25,7 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
   final sections = const [
     'All orders',
     'Users',
-    'Clinic approvals',
+    'Clinics',
     'Performance'
   ];
   final icons = const [
@@ -149,7 +149,7 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
               embedded: true,
               onUsersChanged: refreshCounts),
           'Performance' => AdminPerformanceView(api: widget.api),
-          'Clinic approvals' => ClinicApprovals(api: widget.api),
+          'Clinics' => ClinicApprovals(api: widget.api),
           _ => AdminOrdersView(
               api: widget.api,
               onOverviewChanged: (data) {
