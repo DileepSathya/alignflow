@@ -127,7 +127,7 @@ class _ClinicDashboardState extends State<ClinicDashboard> {
     ];
     return ListView(children: [
       DemoPageHeading(
-          title: 'Clinic dashboard',
+          title: widget.user['role'] == 'clinician' ? 'My dashboard' : 'Clinic dashboard',
           subtitle:
               '${widget.clinic['clinic_name']} · Your cases and next decisions'),
       const SizedBox(height: 16),
@@ -142,7 +142,7 @@ class _ClinicDashboardState extends State<ClinicDashboard> {
                       api: widget.api, clinics: [widget.clinic]));
               refresh();
             }),
-        OutlinedButton(
+        if (widget.user['role'] == 'clinic_admin') OutlinedButton(
             onPressed: widget.onAddClinician,
             child: const Text('Add clinician')),
         OutlinedButton(
@@ -208,7 +208,7 @@ class _ClinicDashboardState extends State<ClinicDashboard> {
       ]),
       queue('Recently updated cases', data!['recent'],
           'Create your first order to get started.'),
-      Card(
+      if (widget.user['role'] == 'clinic_admin') Card(
           child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(

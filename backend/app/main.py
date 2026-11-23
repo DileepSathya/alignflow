@@ -52,6 +52,7 @@ def load_teams():
 
 
 TEAMS = load_teams()
+CLINIC_ROLES = {"clinic_admin", "clinician"}
 TEAM_IDS = {team["id"] for team in TEAMS}
 mongo = MongoClient(settings.mongodb_url, serverSelectionTimeoutMS=3000)[settings.mongodb_database]
 orders = mongo.orders
@@ -126,7 +127,7 @@ def migrate_clinic_attribution():
                         "WHEN 'qc' THEN 'planning' ELSE role END "
                         "WHERE role IN ('cad', 'lab', 'qc')")
             cur.execute("ALTER TABLE users ADD CONSTRAINT users_role_check "
-                        "CHECK (role IN ('admin', 'marketing', 'scanner', 'planning', 'production', 'clinic_admin'))")
+                        "CHECK (role IN ('admin', 'marketing', 'scanner', 'planning', 'production', 'clinic_admin', 'clinician'))")
 
 
 def hash_password(password: str) -> str:
@@ -191,6 +192,8 @@ class UserUpdate(UserInput):
 
 
 class ClinicianInput(BaseModel):
+    username: str | None = Field(default=None, max_length=30)
+    password: str | None = Field(default=None, min_length=8, repr=False)
     clinician_id: int | None = None
     name: str = Field(min_length=1)
     mobile_number: str = Field(min_length=1)
@@ -256,7 +259,7 @@ def current_user(request: Request, authorization: str | None = Header(default=No
         user = cur.fetchone()
     if user is None:
         raise HTTPException(status_code=401, detail="Session expired")
-    if user['role'] == 'clinic_admin':
+    if user['role'] in CLINIC_ROLES:
         path = request.url.path
         allowed_get = path in {'/api/me', '/api/my-clinic', '/api/my-clinic/overview', '/api/orders', '/api/patients'} or path.startswith('/api/orders/')
         order_action = path.startswith('/api/orders/') and path.split('/')[-1] in {'issues', 'status', 'documents'}
@@ -274,6 +277,9 @@ def current_user(request: Request, authorization: str | None = Header(default=No
         if clinic is None or clinic['approval_status'] != 'approved':
             raise HTTPException(status_code=403, detail='Clinic approval required')
         user["clinician_id"] = clinic.get("clinician_id")
+        if user["role"] == "clinician" and (not user["clinician_id"] or path in {
+                "/api/my-clinic/clinicians", "/api/patients"}):
+            raise HTTPException(status_code=403, detail="Clinician access is restricted")
     return user
 
 
@@ -361,7 +367,7 @@ def login(body: LoginInput, conn=Depends(connection)):
         user = cur.fetchone()
         if user is None or not verify_password(body.password, user['password']):
             raise HTTPException(status_code=401, detail="Invalid username or password")
-        if user['role'] == 'clinic_admin':
+        if user['role'] in CLINIC_ROLES:
             cur.execute('SELECT approval_status FROM clinics WHERE id=%s', (user['clinic_id'],))
             clinic = cur.fetchone()
             if clinic is None or clinic['approval_status'] != 'approved':
@@ -391,7 +397,7 @@ def logout(authorization: str = Header(), user=Depends(current_user), conn=Depen
 def list_users(admin=Depends(admin_user), conn=Depends(connection)):
     with conn.cursor() as cur:
         cur.execute("SELECT id, username, name, role, created_at FROM users "
-                    "WHERE role <> 'clinic_admin' ORDER BY created_at DESC, id DESC")
+                    "WHERE role NOT IN ('clinic_admin', 'clinician') ORDER BY created_at DESC, id DESC")
         return {"users": cur.fetchall()}
 
 
@@ -417,7 +423,7 @@ def create_user(body: UserInput, admin=Depends(admin_user), conn=Depends(connect
 @app.patch("/api/users/{user_id}")
 def update_user(user_id: int, body: UserUpdate, admin=Depends(admin_user), conn=Depends(connection)):
     with conn.cursor() as cur:
-        cur.execute("SELECT role FROM users WHERE id = %s AND role <> 'clinic_admin'", (user_id,))
+        cur.execute("SELECT role FROM users WHERE id = %s AND role NOT IN ('clinic_admin', 'clinician')", (user_id,))
         user = cur.fetchone()
         if user is None:
             raise HTTPException(status_code=404, detail="User not found")
@@ -444,7 +450,7 @@ def update_user(user_id: int, body: UserUpdate, admin=Depends(admin_user), conn=
 @app.delete("/api/users/{user_id}", status_code=204)
 def delete_user(user_id: int, admin=Depends(admin_user), conn=Depends(connection)):
     with conn.cursor() as cur:
-        cur.execute("SELECT role FROM users WHERE id = %s AND role <> 'clinic_admin'", (user_id,))
+        cur.execute("SELECT role FROM users WHERE id = %s AND role NOT IN ('clinic_admin', 'clinician')", (user_id,))
         user = cur.fetchone()
         if user is None:
             raise HTTPException(status_code=404, detail="User not found")
@@ -458,7 +464,7 @@ def list_clinics(user=Depends(clinic_manager), conn=Depends(connection)):
     with conn.cursor() as cur:
         cur.execute("SELECT * FROM clinics ORDER BY clinic_name, id")
         clinics = cur.fetchall()
-        cur.execute("SELECT * FROM clinicians ORDER BY clinician_id")
+        cur.execute("SELECT p.*, u.role AS account_role FROM clinicians p LEFT JOIN users u ON u.id=p.account_id ORDER BY clinician_id")
         clinicians = cur.fetchall()
     by_clinic = {clinic["id"]: [] for clinic in clinics}
     for clinician in clinicians:
@@ -488,24 +494,61 @@ def reset_clinic_password(clinic_id: int, body: PasswordReset, user=Depends(mark
 
 @app.get('/api/my-clinic')
 def my_clinic(user=Depends(current_user), conn=Depends(connection)):
-    if user['role'] != 'clinic_admin':
-        raise HTTPException(status_code=403, detail='Clinic admin only')
+    if user['role'] not in CLINIC_ROLES:
+        raise HTTPException(status_code=403, detail='Clinic account required')
     with conn.cursor() as cur:
         cur.execute('SELECT * FROM clinics WHERE id=%s', (user['clinic_id'],))
         clinic = cur.fetchone()
+        if user['role'] == 'clinician':
+            cur.execute('SELECT * FROM clinicians WHERE clinic_id=%s AND clinician_id=%s',
+                        (clinic['id'], user['clinician_id']))
+            clinic['clinicians'] = cur.fetchall()
+            return {'clinic': clinic}
         return {'clinic': clinic_with_clinicians(cur, clinic)}
 
 
 @app.post('/api/my-clinic/clinicians', status_code=201)
 def add_my_clinician(body: ClinicianInput, user=Depends(current_user), conn=Depends(connection)):
-    if user['role'] != 'clinic_admin' or body.clinician_id is not None:
+    if user['role'] != 'clinic_admin':
         raise HTTPException(status_code=403, detail='Clinic admin only')
     with conn.cursor() as cur:
-        cur.execute('INSERT INTO clinicians (name,mobile_number,email,clinic_id,clinical_role,added_by) VALUES (%s,%s,%s,%s,%s,%s) RETURNING *', (body.name, body.mobile_number, body.email, user['clinic_id'], body.clinical_role, user['id']))
-        return {'clinician': cur.fetchone()}
+        person_id = body.clinician_id
+        if person_id is None:
+            cur.execute("INSERT INTO clinicians (name,mobile_number,email,clinic_id,clinical_role,added_by) "
+                        "VALUES (%s,%s,%s,%s,%s,%s) RETURNING clinician_id",
+                        (body.name, body.mobile_number, body.email, user['clinic_id'], body.clinical_role, user['id']))
+            person_id = cur.fetchone()['clinician_id']
+        provision_clinician(cur, user['clinic_id'], person_id, body)
+        cur.execute("SELECT * FROM clinicians WHERE clinician_id=%s", (person_id,))
+        return {"clinician": cur.fetchone()}
 
 
-def save_clinicians(cur, clinic_id: int, clinicians: list[ClinicianInput], added_by: int | None = None):
+def provision_clinician(cur, clinic_id, person_id, person):
+    username = (person.username or "").strip()
+    if not username or not person.password:
+        raise HTTPException(status_code=422, detail="Enter a clinician username and password")
+    cur.execute("SELECT name, account_id FROM clinicians WHERE clinic_id=%s AND clinician_id=%s FOR UPDATE",
+                (clinic_id, person_id))
+    profile = cur.fetchone()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Clinician not found")
+    if profile["account_id"] is not None:
+        raise HTTPException(status_code=409, detail="Clinician already has a login")
+    account_id = create_clinic_account(cur, username, person.password, profile["name"], "clinician", clinic_id)
+    cur.execute("UPDATE clinicians SET account_id=%s WHERE clinician_id=%s", (account_id, person_id))
+
+
+def create_clinic_account(cur, username, password, name, role, clinic_id):
+    cur.execute("INSERT INTO users (username,password,name,role,clinic_id) VALUES (%s,%s,%s,%s,%s) "
+                "ON CONFLICT DO NOTHING RETURNING id", (username.strip(), hash_password(password), name, role, clinic_id))
+    account = cur.fetchone()
+    if not account:
+        raise HTTPException(status_code=409, detail="Username already exists")
+    return account["id"]
+
+
+def save_clinicians(cur, clinic_id: int, clinicians: list[ClinicianInput], added_by: int | None = None,
+                    first_is_admin: bool = False):
     ids = [person.clinician_id for person in clinicians if person.clinician_id is not None]
     if len(ids) != len(set(ids)):
         raise HTTPException(status_code=400, detail="Duplicate clinician ID")
@@ -514,22 +557,30 @@ def save_clinicians(cur, clinic_id: int, clinicians: list[ClinicianInput], added
                     (clinic_id, ids))
         if {row["clinician_id"] for row in cur.fetchall()} != set(ids):
             raise HTTPException(status_code=400, detail="Clinician does not belong to this clinic")
-    for person in clinicians:
+    saved_ids = []
+    for index, person in enumerate(clinicians):
+        person_id = person.clinician_id
         if person.clinician_id is None:
             cur.execute("INSERT INTO clinicians (name, mobile_number, email, clinic_id, clinical_role, added_by) "
                         "VALUES (%s, %s, %s, %s, %s, %s) RETURNING clinician_id",
                         (person.name, person.mobile_number, person.email, clinic_id, person.clinical_role, added_by))
-            ids.append(cur.fetchone()["clinician_id"])
+            person_id = cur.fetchone()["clinician_id"]
+            ids.append(person_id)
         else:
             cur.execute("UPDATE clinicians SET name = %s, mobile_number = %s, email = %s, clinical_role = %s "
                         "WHERE clinician_id = %s AND clinic_id = %s",
                         (person.name, person.mobile_number, person.email, person.clinical_role, person.clinician_id, clinic_id))
+        saved_ids.append(person_id)
+        if not (first_is_admin and index == 0) and (person.clinician_id is None or person.username or person.password):
+            provision_clinician(cur, clinic_id, person_id, person)
     cur.execute("DELETE FROM clinicians WHERE clinic_id = %s AND account_id IS NULL AND NOT (clinician_id = ANY(%s))",
                 (clinic_id, ids))
+    return saved_ids
 
 
 def clinic_with_clinicians(cur, clinic: dict) -> dict:
-    cur.execute("SELECT * FROM clinicians WHERE clinic_id = %s ORDER BY clinician_id", (clinic["id"],))
+    cur.execute("SELECT p.*, u.role AS account_role FROM clinicians p LEFT JOIN users u ON u.id=p.account_id "
+                "WHERE p.clinic_id = %s ORDER BY p.clinician_id", (clinic["id"],))
     clinic["clinicians"] = cur.fetchall()
     return clinic
 
@@ -556,10 +607,10 @@ def create_clinic(body: ClinicInput, user=Depends(clinic_manager), conn=Depends(
             (body.clinic_name, body.contact_number, body.email, body.area, user["id"]),
         )
         clinic = cur.fetchone()
-        save_clinicians(cur, clinic["id"], body.clinicians or [], user['id'])
-        cur.execute('INSERT INTO users (username,password,name,role,clinic_id) VALUES (%s,%s,%s,%s,%s) RETURNING id', (body.admin_username.strip(), hash_password(body.admin_password), body.clinicians[0].name, 'clinic_admin', clinic['id']))
-        account_id = cur.fetchone()['id']
-        cur.execute('UPDATE clinicians SET account_id=%s WHERE clinician_id=(SELECT clinician_id FROM clinicians WHERE clinic_id=%s ORDER BY clinician_id LIMIT 1)', (account_id, clinic['id']))
+        saved_ids = save_clinicians(cur, clinic["id"], body.clinicians, user['id'], first_is_admin=True)
+        account_id = create_clinic_account(cur, body.admin_username, body.admin_password, body.clinicians[0].name,
+                                          "clinic_admin", clinic["id"])
+        cur.execute("UPDATE clinicians SET account_id=%s WHERE clinician_id=%s", (account_id, saved_ids[0]))
         return {"clinic": clinic_with_clinicians(cur, clinic)}
 
 
@@ -583,14 +634,11 @@ def update_clinic(clinic_id: int, body: ClinicInput, user=Depends(marketing_user
         if clinic is None:
             raise HTTPException(status_code=404, detail="Clinic not found")
         if body.clinicians is not None:
-            save_clinicians(cur, clinic_id, body.clinicians, user['id'])
+            saved_ids = save_clinicians(cur, clinic_id, body.clinicians, user['id'], first_is_admin=not has_admin)
         if not has_admin:
-            cur.execute("INSERT INTO users (username,password,name,role,clinic_id) VALUES (%s,%s,%s,'clinic_admin',%s) RETURNING id", (body.admin_username.strip(), hash_password(body.admin_password), body.clinicians[0].name, clinic_id))
-            account_id = cur.fetchone()['id']
-            first_id = body.clinicians[0].clinician_id
-            if first_id is None:
-                cur.execute('SELECT clinician_id FROM clinicians WHERE clinic_id=%s AND name=%s AND mobile_number=%s AND account_id IS NULL ORDER BY clinician_id LIMIT 1', (clinic_id, body.clinicians[0].name, body.clinicians[0].mobile_number))
-                first_id = cur.fetchone()['clinician_id']
+            account_id = create_clinic_account(cur, body.admin_username, body.admin_password, body.clinicians[0].name,
+                                              "clinic_admin", clinic_id)
+            first_id = saved_ids[0]
             cur.execute('UPDATE clinicians SET account_id=%s WHERE clinician_id=%s AND clinic_id=%s', (account_id, first_id, clinic_id))
         return {"clinic": clinic_with_clinicians(cur, clinic)}
 
@@ -654,7 +702,7 @@ def now():
 
 
 SCANNER_STEPS = ["scanner_review", "scanner_missing"]
-PREPARERS = {"marketing", "clinic_admin", "scanner"}
+PREPARERS = {"marketing", "scanner"} | CLINIC_ROLES
 DOCUMENT_REVIEW = "planner_document_review"
 
 
@@ -718,13 +766,13 @@ def save_scanner_change(doc, fields, user, action):
 
 
 def can_prepare_documents(doc, user):
-    return user["role"] in PREPARERS and (user["role"] != "clinic_admin" or
+    return user["role"] in PREPARERS and (user["role"] not in CLINIC_ROLES or
         (user.get("clinician_id") is not None and user["clinician_id"] == doc.get("clinician_id")))
 
 
 def scanner_review_order(order_id, user):
     doc = get_order(order_id, user)
-    if user["role"] == "clinic_admin" and not can_prepare_documents(doc, user):
+    if user["role"] in CLINIC_ROLES and not can_prepare_documents(doc, user):
         raise HTTPException(status_code=403, detail="Only the case clinician can map these documents")
     if doc["status"] not in SCANNER_STEPS:
         raise HTTPException(status_code=409, detail="Order is not awaiting scanner review")
@@ -862,10 +910,22 @@ def public_order(doc):
     return result
 
 
+def clinic_order_scope(user):
+    scope = {"clinic_id": user["clinic_id"]}
+    if user["role"] == "clinician":
+        if user.get("clinician_id") is None:
+            raise HTTPException(status_code=403, detail="Clinician profile required")
+        scope["clinician_id"] = user["clinician_id"]
+    return scope
+
+
 def get_order(order_id: str, user: dict):
     doc = order_store().find_one({"order_id": order_id})
-    if doc is None or (user['role'] == 'clinic_admin' and doc.get('clinic_id') != user['clinic_id']) or (user["role"] == "production" and
-                       doc["status"] not in VISIBLE_PRODUCTION_STEPS):
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if user["role"] in CLINIC_ROLES and any(doc.get(k) != v for k, v in clinic_order_scope(user).items()):
+        raise HTTPException(status_code=404, detail="Order not found")
+    if user["role"] == "production" and doc["status"] not in VISIBLE_PRODUCTION_STEPS:
         raise HTTPException(status_code=404, detail="Order not found")
     if user["role"] == "planning" and doc["status"] != DOCUMENT_REVIEW and (doc["status"] in SCANNER_STEPS or
             ("checklist" in doc and not doc.get("scanner_approved"))):
@@ -895,9 +955,11 @@ def list_patients(clinic_id: int | None = None, q: str = "", user=Depends(curren
 
 @app.post("/api/orders", status_code=201)
 def create_order(body: OrderInput, user=Depends(current_user), conn=Depends(connection)):
-    if user["role"] not in {"admin", "marketing", "clinic_admin"}:
+    if user["role"] not in {"admin", "marketing", "clinic_admin", "clinician"}:
         raise HTTPException(status_code=403, detail="Order submission is restricted")
-    if user["role"] == "clinic_admin" and body.clinic_id != user["clinic_id"]:
+    if user["role"] == "clinician" and body.clinician_id != user.get("clinician_id"):
+        raise HTTPException(status_code=403, detail="Choose your own clinician profile")
+    if user["role"] in CLINIC_ROLES and body.clinic_id != user["clinic_id"]:
         raise HTTPException(status_code=403, detail="Choose your own clinic")
     existing = order_store().find_one({"request_id": body.request_id})
     if existing:
@@ -1024,9 +1086,9 @@ CLINIC_GROUPS = {
 
 @app.get("/api/my-clinic/overview")
 def clinic_overview(user=Depends(current_user)):
-    if user["role"] != "clinic_admin":
-        raise HTTPException(status_code=403, detail="Clinic admin only")
-    rows = list(order_store().find({"clinic_id": user["clinic_id"]},
+    if user["role"] not in CLINIC_ROLES:
+        raise HTTPException(status_code=403, detail="Clinic account required")
+    rows = list(order_store().find(clinic_order_scope(user),
         {"documents": 0, "comments": 0, "checklist": 0}))
     counts = {key: sum(r["status"] in statuses for r in rows)
               for key, statuses in CLINIC_GROUPS.items()}
@@ -1068,11 +1130,11 @@ def list_orders(q: str = "", status_filter: str = "", status_group: str = "", vi
     if page < 1 or not 1 <= limit <= 100:
         raise HTTPException(status_code=400, detail="Invalid page or limit")
     query = {}
-    if user['role'] == 'clinic_admin':
-        query['clinic_id'] = user['clinic_id']
+    if user['role'] in CLINIC_ROLES:
+        query.update(clinic_order_scope(user))
     if clinician_id is not None or created_month:
-        if user["role"] != "clinic_admin":
-            raise HTTPException(status_code=403, detail="Clinic filters require clinic admin")
+        if user["role"] not in CLINIC_ROLES or (user["role"] == "clinician" and clinician_id not in (None, user["clinician_id"])):
+            raise HTTPException(status_code=403, detail="Clinician filter is restricted")
         if clinician_id is not None:
             query["clinician_id"] = clinician_id
         if created_month:
@@ -1123,7 +1185,7 @@ def list_orders(q: str = "", status_filter: str = "", status_group: str = "", vi
         }
         groups = ({**cad_groups, **qc_groups} if user["role"] == "planning" else
                   cad_groups if user["role"] == "admin" else
-                  lab_groups if user["role"] == "production" else CLINIC_GROUPS if user["role"] == "clinic_admin" else {})
+                  lab_groups if user["role"] == "production" else CLINIC_GROUPS if user["role"] in CLINIC_ROLES else {})
         if status_group not in groups:
             raise HTTPException(status_code=400, detail="Invalid status group")
         query["status"] = {"$in": groups[status_group]}
@@ -1252,7 +1314,7 @@ def admin_overview(admin=Depends(admin_user), conn=Depends(connection)):
     statuses = {row["_id"]: row["count"] for row in rows}
     open_issues = sum(row["open_issues"] for row in rows)
     with conn.cursor() as cur:
-        cur.execute("SELECT COUNT(*) AS count FROM users WHERE role <> 'clinic_admin'")
+        cur.execute("SELECT COUNT(*) AS count FROM users WHERE role NOT IN ('clinic_admin', 'clinician')")
         users = cur.fetchone()["count"]
     return {"total_orders": sum(statuses.values()), "users": users,
             "in_plan": sum(statuses.get(key, 0) for key in
@@ -1314,7 +1376,7 @@ def add_issue(order_id: str, body: IssueInput, user=Depends(current_user)):
     doc = get_order(order_id, user)
     if doc["status"] == "cancelled":
         raise HTTPException(status_code=409, detail="Order is cancelled")
-    if user["role"] in {"marketing", "clinic_admin"}:
+    if user["role"] in {"marketing", "clinic_admin", "clinician"}:
         source_status, issue_status, target_team = "plan_completed", "clinician_issues", "planning"
     elif user["role"] == "planning":
         source_status, issue_status, target_team = "manufactured", "qc_issues", "production"
@@ -1414,14 +1476,14 @@ def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
     if target == "plan_completed" and doc["status"] == "planning_in_progress" and (doc.get("assigned_planner") or {}).get("id") != user["id"]:
         raise HTTPException(status_code=403, detail="Only the assigned planner can complete the plan")
     if target == "cancelled":
-        if user["role"] not in {"marketing", "clinic_admin"}:
+        if user["role"] not in {"marketing", "clinic_admin", "clinician"}:
             raise HTTPException(status_code=403, detail="Marketing or clinic admin only")
         if doc["status"] not in ORDER_STEPS[:4] + SCANNER_STEPS + [DOCUMENT_REVIEW]:
             raise HTTPException(status_code=409, detail="Order cannot be cancelled after clinician approval")
     else:
         legacy_review_reset = (target == "plan_completed" and doc["status"] == "clinician_issues"
-                               and user["role"] in {"marketing", "clinic_admin"} and not doc["issues"])
-        clinical_approval = target == "clinician_approved" and user["role"] in {"marketing", "clinic_admin"}
+                               and user["role"] in {"marketing", "clinic_admin", "clinician"} and not doc["issues"])
+        clinical_approval = target == "clinician_approved" and user["role"] in {"marketing", "clinic_admin", "clinician"}
         admin_plan = target == "plan_completed" and user["role"] == "admin" and (doc.get("assigned_planner") or {}).get("id") == user["id"]
         if not legacy_review_reset and not clinical_approval and not admin_plan and (target not in STATUS_ROLES or user["role"] != STATUS_ROLES[target]):
             raise HTTPException(status_code=403, detail="Team cannot set this status")

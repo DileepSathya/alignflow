@@ -38,56 +38,10 @@ class _ClinicWorkspaceState extends State<ClinicWorkspace> {
     }
   }
 
-  Future<void> add() async {
-    final name = TextEditingController(),
-        mobile = TextEditingController(),
-        email = TextEditingController(),
-        role = TextEditingController(text: 'doctor');
-    final ok = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-                title: const Text('Add clinician'),
-                content: Column(mainAxisSize: MainAxisSize.min, children: [
-                  TextField(
-                      controller: name,
-                      decoration: const InputDecoration(labelText: 'Name')),
-                  TextField(
-                      controller: mobile,
-                      decoration:
-                          const InputDecoration(labelText: 'Mobile number')),
-                  TextField(
-                      controller: email,
-                      decoration: const InputDecoration(labelText: 'Email')),
-                  TextField(
-                      controller: role,
-                      decoration:
-                          const InputDecoration(labelText: 'Clinical role')),
-                ]),
-                actions: [
-                  TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Cancel')),
-                  FilledButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('Add'))
-                ]));
-    if (ok == true) {
-      try {
-        await widget.api.request('POST', '/api/my-clinic/clinicians', {
-          'name': name.text.trim(),
-          'mobile_number': mobile.text.trim(),
-          'email': email.text.trim(),
-          'clinical_role': role.text.trim()
-        });
-        await refresh();
-      } catch (e) {
-        if (mounted) setState(() => error = e.toString());
-      }
-    }
-    name.dispose();
-    mobile.dispose();
-    email.dispose();
-    role.dispose();
+  Future<void> add([Map<String, dynamic>? person]) async {
+    final saved = await showDialog<bool>(
+        context: context, builder: (_) => _ClinicianDialog(api: widget.api, person: person));
+    if (saved == true) await refresh();
   }
 
   @override
@@ -96,9 +50,9 @@ class _ClinicWorkspaceState extends State<ClinicWorkspace> {
     final people = (clinic?['clinicians'] as List?) ?? [];
     return RoleShell(
       title: section,
-      sidebar: Container(
+      sidebar: Material(
         color: Colors.white,
-        padding: const EdgeInsets.fromLTRB(12, 20, 12, 16),
+        child: Padding(padding: const EdgeInsets.fromLTRB(12, 20, 12, 16),
         child:
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           const Padding(
@@ -106,11 +60,11 @@ class _ClinicWorkspaceState extends State<ClinicWorkspace> {
             child: Row(children: [
               DemoBrandMark(size: 34),
               SizedBox(width: 9),
-              Text('AlignFlow',
+              Flexible(child: FittedBox(fit: BoxFit.scaleDown, child: Text('AlignFlow',
                   style: TextStyle(
                       fontFamily: 'Bricolage',
                       fontSize: 19,
-                      fontWeight: FontWeight.w700)),
+                      fontWeight: FontWeight.w700)))),
             ]),
           ),
           const SizedBox(height: 24),
@@ -142,7 +96,7 @@ class _ClinicWorkspaceState extends State<ClinicWorkspace> {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                           fontSize: 12, fontWeight: FontWeight.w700)),
-                  const Text('Clinic admin',
+                  Text(widget.user['role'] == 'clinician' ? 'Clinician' : 'Clinic admin',
                       style: TextStyle(fontSize: 11, color: DemoStyle.muted)),
                 ],
               )),
@@ -152,7 +106,7 @@ class _ClinicWorkspaceState extends State<ClinicWorkspace> {
           for (final item in [
             ('Dashboard', Icons.dashboard_outlined),
             ('Orders', Icons.receipt_long_outlined),
-            ('Clinicians', Icons.people_outline)
+            if (widget.user['role'] == 'clinic_admin') ('Clinicians', Icons.people_outline)
           ])
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),
@@ -196,7 +150,7 @@ class _ClinicWorkspaceState extends State<ClinicWorkspace> {
             },
             child: const Text('Log out'),
           ),
-        ]),
+        ])),
       ),
       content: Center(
         child: ConstrainedBox(
@@ -272,7 +226,9 @@ class _ClinicWorkspaceState extends State<ClinicWorkspace> {
                                                         ? const Chip(
                                                             label:
                                                                 Text('Admin'))
-                                                        : null,
+                                                        : person['account_id'] == null
+                                                            ? TextButton(onPressed: () => add(person), child: const Text('Create login'))
+                                                            : null,
                                               );
                                             },
                                           ))),
@@ -282,4 +238,61 @@ class _ClinicWorkspaceState extends State<ClinicWorkspace> {
       ),
     );
   }
+}
+
+class _ClinicianDialog extends StatefulWidget {
+  final Api api;
+  final Map<String, dynamic>? person;
+  const _ClinicianDialog({required this.api, this.person});
+
+  @override
+  State<_ClinicianDialog> createState() => _ClinicianDialogState();
+}
+
+class _ClinicianDialogState extends State<_ClinicianDialog> {
+  late final values = <String, dynamic>{
+    'clinical_role': 'doctor',
+    ...?widget.person,
+  };
+  bool saving = false;
+  String? error;
+
+  Future<void> save() async {
+    if (saving) return;
+    if ((values['username'] as String? ?? '').trim().isEmpty ||
+        (values['password'] as String? ?? '').length < 8) {
+      setState(() => error = 'Enter a username and a password of at least 8 characters.');
+      return;
+    }
+    setState(() { saving = true; error = null; });
+    try {
+      await widget.api.request('POST', '/api/my-clinic/clinicians', values);
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) setState(() { saving = false; error = e.toString(); });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    scrollable: true,
+    title: Text(widget.person == null ? 'Add clinician' : 'Create login for ${widget.person!['name']}'),
+    content: Column(mainAxisSize: MainAxisSize.min, children: [
+      for (final field in {
+        if (widget.person == null) ...{
+          'name': 'Name', 'mobile_number': 'Mobile number', 'email': 'Email', 'clinical_role': 'Clinical role',
+        },
+        'username': 'Username', 'password': 'Password (at least 8 characters)',
+      }.entries)
+        TextFormField(initialValue: values[field.key]?.toString(),
+            enabled: !saving, obscureText: field.key == 'password',
+            decoration: InputDecoration(labelText: field.value),
+            onChanged: (value) => values[field.key] = value),
+      if (error != null) Text(error!, style: const TextStyle(color: Colors.red)),
+    ]),
+    actions: [
+      TextButton(onPressed: saving ? null : () => Navigator.pop(context), child: const Text('Cancel')),
+      FilledButton(onPressed: saving ? null : save, child: const Text('Save')),
+    ],
+  );
 }

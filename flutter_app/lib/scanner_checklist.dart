@@ -26,7 +26,7 @@ class _ScannerChecklistState extends State<ScannerChecklist> {
   bool get canEdit =>
       pending &&
       widget.order['can_prepare_documents'] != false &&
-      ['marketing', 'scanner', 'clinic_admin'].contains(widget.role);
+      ['marketing', 'scanner', 'clinic_admin', 'clinician'].contains(widget.role);
   bool get reviewing =>
       ['planning', 'admin'].contains(widget.role) &&
       widget.order['status'] == 'planner_document_review';

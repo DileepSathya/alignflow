@@ -550,13 +550,17 @@ class ClinicDialog extends StatefulWidget {
 
 class _ClinicianFields {
   final int? id;
+  final bool hasLogin;
+  final username = TextEditingController();
+  final password = TextEditingController();
   final name = TextEditingController();
   final mobile = TextEditingController();
   final email = TextEditingController();
   final role = TextEditingController(text: 'doctor');
 
   _ClinicianFields([Map<String, dynamic>? value])
-      : id = value?['clinician_id'] as int? {
+      : hasLogin = value?['account_id'] != null,
+        id = value?['clinician_id'] as int? {
     name.text = value?['name'] as String? ?? '';
     mobile.text = value?['mobile_number'] as String? ?? '';
     email.text = value?['email'] as String? ?? '';
@@ -565,6 +569,8 @@ class _ClinicianFields {
 
   Map<String, dynamic> toJson() => {
         if (id != null) 'clinician_id': id,
+        if (username.text.trim().isNotEmpty) 'username': username.text.trim(),
+        if (password.text.isNotEmpty) 'password': password.text,
         'name': name.text.trim(),
         'mobile_number': mobile.text.trim(),
         'email': email.text.trim(),
@@ -576,6 +582,8 @@ class _ClinicianFields {
     mobile.dispose();
     email.dispose();
     role.dispose();
+    username.dispose();
+    password.dispose();
   }
 }
 
@@ -583,7 +591,7 @@ class _ClinicDialogState extends State<ClinicDialog> {
   bool get needsAdmin =>
       widget.clinic == null ||
       !(((widget.clinic?['clinicians'] as List?) ?? [])
-          .any((c) => c['account_id'] != null));
+          .any((c) => c['account_role'] == 'clinic_admin'));
   late final List<_ClinicianFields> clinicians =
       ((widget.clinic?['clinicians'] as List?) ?? [])
           .map((value) => _ClinicianFields(value as Map<String, dynamic>))
@@ -650,6 +658,12 @@ class _ClinicDialogState extends State<ClinicDialog> {
           clinician.mobile.text.trim().isEmpty) {
         setState(
             () => error = 'Complete each clinician name and mobile number.');
+        return;
+      }
+      if (!clinician.hasLogin && !(needsAdmin && clinician == clinicians.first) &&
+          (clinician.id == null || clinician.username.text.isNotEmpty || clinician.password.text.isNotEmpty) &&
+          (clinician.username.text.trim().isEmpty || clinician.password.text.length < 8)) {
+        setState(() => error = 'Enter a username and a password of at least 8 characters for ${clinician.name.text}.');
         return;
       }
       final address = clinician.email.text.trim();
@@ -747,7 +761,7 @@ class _ClinicDialogState extends State<ClinicDialog> {
                       IconButton(
                           tooltip: 'Remove clinician',
                           icon: const Icon(Icons.delete_outline),
-                          onPressed: needsAdmin && clinician == clinicians.first
+                          onPressed: clinician.hasLogin || (needsAdmin && clinician == clinicians.first)
                               ? null
                               : () => setState(() {
                                     clinicians.remove(clinician);
@@ -768,6 +782,12 @@ class _ClinicDialogState extends State<ClinicDialog> {
                             labelText: needsAdmin && clinician == clinicians.first
                                 ? 'Email (required for clinic admin)'
                                 : 'Email (optional)')),
+                    if (!clinician.hasLogin && !(needsAdmin && clinician == clinicians.first)) ...[
+                      TextField(controller: clinician.username,
+                          decoration: InputDecoration(labelText: clinician.id == null ? 'Username' : 'Username (to enable login)')),
+                      TextField(controller: clinician.password, obscureText: true,
+                          decoration: const InputDecoration(labelText: 'Password (at least 8 characters)')),
+                    ],
                     TextField(
                         controller: clinician.role,
                         decoration:

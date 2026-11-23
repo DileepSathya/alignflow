@@ -117,3 +117,6 @@ On the first order-store access, existing unassigned `submitted` orders without
 scanner approval move to Scanner review with the current checklist. Orders
 already in Planning or later stages retain their existing workflow.
 
+
+
+Swagger UI visual api calls http://127.0.0.1:8000/docs

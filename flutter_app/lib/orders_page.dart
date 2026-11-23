@@ -144,8 +144,7 @@ class _OrdersPageState extends State<OrdersPage> {
                 title: 'Orders',
                 subtitle:
                     'Track every patient case from submission to delivery.'),
-            if (widget.user['role'] == 'marketing' ||
-                widget.user['role'] == 'clinic_admin')
+            if (['marketing', 'clinic_admin', 'clinician'].contains(widget.user['role']))
               FilledButton.icon(
                   onPressed: create,
                   icon: const Icon(Icons.upload_outlined),
@@ -405,7 +404,10 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
       ? widget.clinics.first['id'] as int
       : selectedClinicId;
   int? selectedClinicId;
-  int? clinicianId;
+  late int? clinicianId = widget.clinics.length == 1 &&
+          (widget.clinics.first['clinicians'] as List?)?.length == 1
+      ? widget.clinics.first['clinicians'][0]['clinician_id'] as int
+      : null;
   bool saving = false;
   String? error;
   late final requestId =
@@ -1033,7 +1035,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                 subtitle: Text(
                                     'Uploaded by ${document['by']} (${document['role']})'),
                                 onTap: () => downloadFile(document as Map),
-                                trailing: widget.role != 'admin' &&
+                                trailing: !['admin', 'clinician'].contains(widget.role) &&
                                         document['role'] == widget.role &&
                                         (document['checklist_id'] == null ||
                                             document['checklist_id'] == '') &&
@@ -1059,7 +1061,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                                 }
                                               })
                                     : null),
-                          if (widget.role != 'admin')
+                          if (widget.role != 'admin' && data['status'] != 'cancelled')
                             OutlinedButton.icon(
                                 onPressed: busy ? null : addFiles,
                                 icon: const Icon(Icons.upload_file),
@@ -1075,13 +1077,13 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                 title: Text(item['text'] as String),
                                 subtitle:
                                     Text('${item['by']} • ${item['at']}')),
-                          if (widget.role != 'admin')
+                          if (!['admin', 'clinician'].contains(widget.role))
                             TextField(
                                 controller: comment,
                                 maxLines: 2,
                                 decoration: const InputDecoration(
                                     hintText: 'Write a comment')),
-                          if (widget.role != 'admin')
+                          if (!['admin', 'clinician'].contains(widget.role))
                             Align(
                                 alignment: Alignment.centerRight,
                                 child: FilledButton(
@@ -1132,7 +1134,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                                 '/api/orders/${widget.orderId}/issues/${item['id']}/resolve'),
                                         child: const Text('Resolve'))
                                     : null),
-                          if ((['marketing', 'clinic_admin']
+                          if ((['marketing', 'clinic_admin', 'clinician']
                                       .contains(widget.role) &&
                                   data['status'] == 'plan_completed') ||
                               (widget.qcMode &&
@@ -1143,7 +1145,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                     onPressed: busy ? null : raiseIssue,
                                     child: const Text('Raise issue'))),
                         ])),
-                if (['marketing', 'clinic_admin'].contains(widget.role) &&
+                if (['marketing', 'clinic_admin', 'clinician'].contains(widget.role) &&
                     [
                       'scanner_review',
                       'scanner_missing',
@@ -1210,7 +1212,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                               '/api/orders/${widget.orderId}/status',
                               {'status': 'plan_completed'}),
                       child: const Text('Plan completed')),
-                if (['marketing', 'clinic_admin'].contains(widget.role) &&
+                if (['marketing', 'clinic_admin', 'clinician'].contains(widget.role) &&
                     data['status'] == 'plan_completed')
                   FilledButton(
                       onPressed: busy
@@ -1220,7 +1222,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                               '/api/orders/${widget.orderId}/status',
                               {'status': 'clinician_approved'}),
                       child: const Text('Clinician approved')),
-                if (['marketing', 'clinic_admin'].contains(widget.role) &&
+                if (['marketing', 'clinic_admin', 'clinician'].contains(widget.role) &&
                     data['status'] == 'clinician_issues' &&
                     (data['issues'] as List).isEmpty)
                   OutlinedButton(

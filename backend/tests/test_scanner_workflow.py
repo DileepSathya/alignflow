@@ -43,6 +43,34 @@ class ScannerTests(unittest.TestCase):
             fn(*args, **kwargs)
         self.assertEqual(caught.exception.status_code, code)
 
+    def test_clinician_can_prepare_and_submit_assigned_case(self):
+        user = dict(id=42, role="clinician", name="Doctor", clinic_id=10, clinician_id=4)
+        self.doc.update(clinic_id=10, clinician_id=4)
+        for item in self.doc["checklist"]:
+            docs = []
+            for index in range(item["min_files"]):
+                key = f"{item['id']}-{index}"
+                self.doc["documents"].append({"id": key, "name": key + item["extensions"][0]})
+                docs.append(key)
+            main.update_checklist(self.doc["order_id"], item["id"],
+                main.ChecklistInput(document_ids=docs, text="Instructions" if item["allow_text"] else ""), user=user)
+        self.assert_status(403, main.update_checklist, self.doc["order_id"], "upper_arch",
+                           main.ChecklistInput(verified=True), user=user)
+        result = main.submit_documents(self.doc["order_id"], user=user)
+        self.assertEqual(result["order"]["status"], main.DOCUMENT_REVIEW)
+
+    def test_clinician_decisions_follow_order_stage(self):
+        user = dict(id=42, role="clinician", name="Doctor", clinic_id=10, clinician_id=4)
+        self.doc.update(clinic_id=10, clinician_id=4, status="plan_completed", issues=[])
+        order_id = self.doc["order_id"]
+        result = main.add_issue(order_id, main.IssueInput(text="Revise plan", raised_to="planning"), user=user)
+        self.assertEqual(result["order"]["status"], "clinician_issues")
+        main.change_status(order_id, main.StatusInput(status="cancelled"), user=user)
+        self.assertEqual(self.doc["status"], "cancelled")
+        self.doc.update(status="plan_completed", issues=[])
+        main.change_status(order_id, main.StatusInput(status="clinician_approved"), user=user)
+        self.assert_status(409, main.change_status, order_id, main.StatusInput(status="cancelled"), user=user)
+
     def test_snapshot_is_independent(self):
         self.doc['checklist'][0]['extensions'].append('.new')
         self.assertNotIn('.new', main.new_checklist()[0]['extensions'])

@@ -60,7 +60,7 @@ class _AlignFlowAppState extends State<AlignFlowApp> {
                             api: api,
                             user: user!,
                             onLogout: () => setState(() => user = null))
-                        : user!['role'] == 'clinic_admin'
+                        : ['clinic_admin', 'clinician'].contains(user!['role'])
                             ? ClinicWorkspace(
                                 api: api,
                                 user: user!,
