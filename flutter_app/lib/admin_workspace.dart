@@ -3,6 +3,7 @@ import 'role_shell.dart';
 import 'package:flutter/material.dart';
 import 'api.dart';
 import 'admin_page.dart';
+import 'lab_orders_page.dart';
 import 'demo_style.dart';
 import 'orders_page.dart';
 import 'clinic_approvals.dart';
@@ -29,6 +30,7 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
   final sections = const [
     'All orders',
     'Planning',
+    'Production',
     'Users',
     'Clinics',
     'Performance'
@@ -36,6 +38,7 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
   final icons = const [
     Icons.receipt_long_outlined,
     Icons.assignment_ind_outlined,
+    Icons.factory_outlined,
     Icons.people_outline,
     Icons.verified_outlined,
     Icons.bar_chart_outlined
@@ -102,7 +105,7 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
                     title:
                         Text(sections[i], style: const TextStyle(fontSize: 13)),
                     selected: section == sections[i],
-                    trailing: i == 0 || i == 2
+                    trailing: sections[i] == 'All orders' || sections[i] == 'Users'
                         ? Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 7, vertical: 2),
@@ -128,6 +131,7 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
                       AppRouter.of(context).go(const {
                         'All orders': '/admin/orders',
                         'Planning': '/admin/planning',
+                        'Production': '/admin/production',
                         'Users': '/admin/users',
                         'Clinics': '/admin/clinics',
                         'Performance': '/admin/performance'
@@ -154,6 +158,8 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
               onUsersChanged: refreshCounts),
           'Performance' => AdminPerformanceView(api: widget.api),
           'Planning' => AdminPlanningView(api: widget.api, user: widget.user),
+          'Production' => LabOrdersPage(
+              api: widget.api, user: widget.user, onLogout: widget.onLogout, embedded: true),
           'Clinics' => ClinicApprovals(api: widget.api),
           _ => AdminOrdersView(
               api: widget.api,

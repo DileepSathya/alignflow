@@ -18,11 +18,13 @@ class LabOrdersPage extends StatefulWidget {
   final Api api;
   final Map<String, dynamic> user;
   final VoidCallback onLogout;
+  final bool embedded;
   const LabOrdersPage(
       {super.key,
       required this.api,
       required this.user,
-      required this.onLogout});
+      required this.onLogout,
+      this.embedded = false});
 
   @override
   State<LabOrdersPage> createState() => _LabOrdersPageState();
@@ -69,6 +71,7 @@ class _LabOrdersPageState extends State<LabOrdersPage> {
       final result = await widget.api.request(
           'GET',
           Uri(path: '/api/orders', queryParameters: {
+            if (widget.embedded) 'view': 'production',
             'page': '$page',
             'limit': '25',
             if (group.isNotEmpty) 'status_group': group,
@@ -164,10 +167,7 @@ class _LabOrdersPageState extends State<LabOrdersPage> {
   Widget build(BuildContext context) {
     final compact = MediaQuery.sizeOf(context).width <= 900;
     final clinics = (overview['clinics'] as List?) ?? [];
-    return RoleShell(
-        sidebar: rail(compact),
-        title: 'Orders',
-        content: Center(
+    final content = Center(
             child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 1180),
                 child: Padding(
@@ -355,7 +355,9 @@ class _LabOrdersPageState extends State<LabOrdersPage> {
                                           : null,
                                       icon: const Icon(Icons.chevron_right)),
                                 ]),
-                        ])))));
+                        ]))));
+    if (widget.embedded) return content;
+    return RoleShell(sidebar: rail(compact), title: 'Orders', content: content);
   }
 }
 

@@ -34,6 +34,17 @@ class _Orders:
 
 
 class QcOverviewTests(unittest.TestCase):
+    def test_admin_production_queue_matches_production_team(self):
+        orders = _Orders()
+        with patch.object(main, "order_store", return_value=orders):
+            for filters in ({}, {"status_group": "qc_issue_raised", "clinic_id": 3, "q": "ABC"}):
+                main.list_orders(user={"role": "production"}, **filters)
+                expected_query = orders.last_query
+                main.list_orders(view="production", user={"role": "admin"}, **filters)
+                self.assertEqual(orders.last_query, expected_query)
+            self.assertEqual(main.lab_overview(user={"role": "admin"}),
+                             main.lab_overview(user={"role": "production"}))
+
     def test_counts_pending_resolved_and_completed(self):
         with patch.object(main, "order_store", return_value=_Orders()):
             result = main.qc_overview(user={"role": "planning"})

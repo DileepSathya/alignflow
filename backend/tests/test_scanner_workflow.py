@@ -194,6 +194,15 @@ class ScannerTests(unittest.TestCase):
         self.assertEqual(claimed['status'], 'planning_in_progress')
         self.assertEqual(claimed['assigned_planner']['id'], ADMIN['id'])
 
+    def test_admin_reassignment_closes_at_clinician_approval(self):
+        self.doc['assigned_planner'] = PLANNER
+        for status in main.VISIBLE_PRODUCTION_STEPS:
+            with self.subTest(status=status):
+                self.doc['status'] = status
+                self.assertFalse(main.public_order(self.doc)['planner_assignment_open'])
+                self.assert_status(409, main.change_assignment, self.doc['order_id'],
+                                   main.AssignmentChange(user_id=ADMIN['id']), user=ADMIN)
+
     def test_missing_request_visible_to_marketing(self):
         main.request_missing(self.doc['order_id'], main.MissingItemsInput(note='Please upload scans'), user=SCANNER)
         result = main.get_order(self.doc['order_id'], MARKETING)

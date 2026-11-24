@@ -67,9 +67,10 @@ void main() {
     expect(find.text('Approve and send to Planning'), findsNothing);
     expect(tester.widget<Checkbox>(find.byType(Checkbox)).onChanged, isNull);
   });
-  testWidgets('only admin sees authorize exception', (tester) async {
+  testWidgets('admin can select files for required items', (tester) async {
     await show(tester, 'admin');
-    expect(find.text('Authorize exception'), findsOneWidget);
+    expect(find.text('Select files'), findsOneWidget);
+    expect(find.text('Authorize exception'), findsNothing);
     expect(find.text('Upload missing files'), findsNothing);
   });
 }

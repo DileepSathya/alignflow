@@ -704,6 +704,7 @@ STATUS_ROLES = {"plan_completed": "planning", "clinician_approved": "clinic_admi
                 "manufacturing_in_process": "production", "manufactured": "production",
                 "qc_approved": "planning"}
 VISIBLE_PRODUCTION_STEPS = ORDER_STEPS[4:] + ["manufacture_completed"]  # Legacy completed orders.
+PLANNER_ASSIGNMENT_STEPS = ORDER_STEPS[:4]
 QC_VISIBLE_STEPS = ["manufactured", "qc_issues", "qc_approved", "manufacture_completed"]
 
 
@@ -925,6 +926,7 @@ def approve_documents(order_id: str, body: DocumentDecision, user=Depends(curren
 def public_order(doc):
     result = {k: v for k, v in doc.items() if k not in {"_id", "request_id", "activity"}}
     result["id"] = str(doc["_id"])
+    result["planner_assignment_open"] = doc.get("status") in PLANNER_ASSIGNMENT_STEPS
     result["documents"] = [{k: v for k, v in item.items() if k != "storage_key"}
                            for item in doc.get("documents", [])]
     for key in ("created_at", "updated_at"):
@@ -1183,11 +1185,12 @@ def list_orders(q: str = "", status_filter: str = "", status_group: str = "", vi
         raise HTTPException(status_code=403, detail="Planning team only")
     if mine:
         query["assigned_planner.id"] = user["id"]
-    if view:
+    production_view = user["role"] == "production" or (view == "production" and user["role"] == "admin")
+    if view and not (view == "production" and production_view):
         if view != "qc" or user["role"] != "planning":
             raise HTTPException(status_code=403, detail="QC view is restricted")
         query["status"] = {"$in": QC_VISIBLE_STEPS}
-    if user["role"] == "production":
+    if production_view:
         query["status"] = {"$in": VISIBLE_PRODUCTION_STEPS}
     if status_group:
         cad_groups = {
@@ -1214,8 +1217,8 @@ def list_orders(q: str = "", status_filter: str = "", status_group: str = "", vi
             "qc_approval_completed": ["qc_approved", "manufacture_completed"],
         }
         groups = ({**cad_groups, **qc_groups} if user["role"] == "planning" else
-                  cad_groups if user["role"] == "admin" else
-                  lab_groups if user["role"] == "production" else CLINIC_GROUPS if user["role"] in CLINIC_ROLES else {})
+                  lab_groups if production_view else cad_groups if user["role"] == "admin" else
+                  CLINIC_GROUPS if user["role"] in CLINIC_ROLES else {})
         if status_group not in groups:
             raise HTTPException(status_code=400, detail="Invalid status group")
         query["status"] = {"$in": groups[status_group]}
@@ -1225,13 +1228,13 @@ def list_orders(q: str = "", status_filter: str = "", status_group: str = "", vi
         elif user["role"] == "planning" and status_group == "qc_approval_pending":
             query["issues"] = {"$not": {"$elemMatch": resolved_issue}}
     if clinic_id is not None:
-        if user["role"] not in {"planning", "production"}:
+        if user["role"] != "planning" and not production_view:
             raise HTTPException(status_code=403, detail="Team cannot filter clinics")
         query["clinic_id"] = clinic_id
     if status_filter:
         if status_group:
             raise HTTPException(status_code=400, detail="Choose one status filter")
-        if user["role"] == "production":
+        if production_view:
             matching = ["qc_approved", "manufacture_completed"] if status_filter == "qc_approved" else [status_filter]
             visible = VISIBLE_PRODUCTION_STEPS
             query["status"] = {"$in": matching if status_filter in visible else []}
@@ -1281,8 +1284,8 @@ def cad_overview(user=Depends(current_user)):
 
 @app.get("/api/lab/overview")
 def lab_overview(user=Depends(current_user)):
-    if user["role"] != "production":
-        raise HTTPException(status_code=403, detail="Production team only")
+    if user["role"] not in {"production", "admin"}:
+        raise HTTPException(status_code=403, detail="Production team or admin only")
     collection = order_store()
     statuses = {row["_id"]: row["count"] for row in collection.aggregate([
         {"$match": {"status": {"$in": VISIBLE_PRODUCTION_STEPS}}},
@@ -1548,7 +1551,7 @@ def resolve_issue(order_id: str, issue_id: str, user=Depends(current_user)):
     canonical_team = {"lab": "production", "cad": "planning"}.get(target_team, target_team)
     issue_status = "qc_issues" if canonical_team == "production" else "clinician_issues"
     return_status = "manufactured" if canonical_team == "production" else "plan_completed"
-    if user["role"] != canonical_team and not (canonical_team == "planning" and user["role"] == "admin"):
+    if user["role"] != canonical_team and not (canonical_team in {"planning", "production"} and user["role"] == "admin"):
         raise HTTPException(status_code=403, detail="Issue belongs to another team")
     if doc["status"] != issue_status or issue["resolved_at"] is not None:
         raise HTTPException(status_code=409, detail="Issue is not open for resolution")
@@ -1605,6 +1608,8 @@ def change_assignment(order_id: str, body: AssignmentChange, user=Depends(curren
     previous = doc.get("assigned_planner")
     if not previous:
         raise HTTPException(status_code=409, detail="Order is unassigned")
+    if doc["status"] not in PLANNER_ASSIGNMENT_STEPS:
+        raise HTTPException(status_code=409, detail="Planner assignment is closed for this order stage")
     if user["role"] == "planning":
         if doc["status"] != "planning_in_progress" or previous.get("id") != user["id"]:
             raise HTTPException(status_code=403, detail="Only the assigned planner can change this assignment")
@@ -1685,7 +1690,9 @@ def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
                                and user["role"] in CLINICAL_REVIEW_ROLES and not doc["issues"])
         clinical_approval = target == "clinician_approved" and user["role"] in CLINICAL_REVIEW_ROLES
         admin_plan = target == "plan_completed" and user["role"] == "admin" and (doc.get("assigned_planner") or {}).get("id") == user["id"]
-        if not legacy_review_reset and not clinical_approval and not admin_plan and (target not in STATUS_ROLES or user["role"] != STATUS_ROLES[target]):
+        status_role = STATUS_ROLES.get(target)
+        admin_production = user["role"] == "admin" and status_role == "production"
+        if not (legacy_review_reset or clinical_approval or admin_plan or admin_production or user["role"] == status_role):
             raise HTTPException(status_code=403, detail="Team cannot set this status")
         allowed = (legacy_review_reset or
                    (doc["status"] == "planning_in_progress" and target == "plan_completed") or

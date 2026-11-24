@@ -176,6 +176,7 @@ class AppRouter extends RouterDelegate<AppRoutePath>
       'admin' => [
           '/admin/orders',
           '/admin/planning',
+          '/admin/production',
           '/admin/users',
           '/admin/clinics',
           '/admin/performance'
@@ -206,6 +207,7 @@ class AppRouter extends RouterDelegate<AppRoutePath>
           initialSection: const {
             '/admin/orders': 'All orders',
             '/admin/planning': 'Planning',
+            '/admin/production': 'Production',
             '/admin/users': 'Users',
             '/admin/clinics': 'Clinics',
             '/admin/performance': 'Performance'

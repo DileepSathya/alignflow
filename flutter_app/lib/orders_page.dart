@@ -719,6 +719,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
   String? error;
   final comment = TextEditingController();
   bool busy = false;
+  bool get canManufacture => widget.role == 'production' || widget.role == 'admin';
   bool get canReviewPlan =>
       const {'admin', 'marketing', 'clinic_admin', 'clinician'}
           .contains(widget.role);
@@ -1316,7 +1317,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                                 ].contains(item['raised_to']) &&
                                                 data['status'] ==
                                                     'clinician_issues') ||
-                                            (widget.role == 'production' &&
+                                            (canManufacture &&
                                                 [
                                                   'lab',
                                                   'production'
@@ -1404,6 +1405,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                     ),
                   ]),
                 if (data['assigned_planner'] != null &&
+                    data['planner_assignment_open'] == true &&
                     (widget.role == 'admin' ||
                         (widget.role == 'planning' && !widget.qcMode &&
                             data['status'] == 'planning_in_progress' &&
@@ -1470,7 +1472,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                               '/api/orders/${widget.orderId}/status',
                               {'status': 'plan_completed'}),
                       child: const Text('Return to clinical review')),
-                if (widget.role == 'production' &&
+                if (canManufacture &&
                     data['status'] == 'clinician_approved')
                   FilledButton(
                       onPressed: busy
@@ -1480,7 +1482,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                               '/api/orders/${widget.orderId}/status',
                               {'status': 'manufacturing_in_process'}),
                       child: const Text('Start manufacturing')),
-                if (widget.role == 'production' &&
+                if (canManufacture &&
                     data['status'] == 'manufacturing_in_process')
                   FilledButton(
                       onPressed: busy
