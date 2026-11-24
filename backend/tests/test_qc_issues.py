@@ -98,6 +98,29 @@ class QcIssueTests(unittest.TestCase):
         self.assertEqual(self.order["status"], "clinician_issues")
         self.assertEqual(self.order["issues"][0]["raised_to"], "planning")
 
+    def test_admin_can_raise_clinician_issue_and_approve_after_resolution(self):
+        admin = {"role": "admin", "name": "Administrator", "id": 1}
+        approval = main.StatusInput(status="clinician_approved")
+        self.order["status"] = "plan_completed"
+        main.add_issue("ORD-000001", main.IssueInput(text="Revise plan", raised_to="planning"), admin)
+        self.assertEqual(self.order["status"], "clinician_issues")
+        issue = self.order["issues"][0]
+        self.assertEqual(issue["raised_to"], "planning")
+        self.assertEqual(issue["by"], "Administrator")
+        with self.assertRaises(HTTPException) as caught:
+            main.change_status("ORD-000001", approval, admin)
+        self.assertEqual(caught.exception.status_code, 409)
+        main.resolve_issue("ORD-000001", issue["id"], {"role": "planning", "name": "Planner"})
+        main.change_status("ORD-000001", approval, admin)
+        self.assertEqual(self.order["status"], "clinician_approved")
+        self.assertEqual(self.order["history"][-1]["by"], "Administrator")
+
+    def test_admin_can_return_legacy_order_to_clinical_review(self):
+        self.order["status"] = "clinician_issues"
+        main.change_status("ORD-000001", main.StatusInput(status="plan_completed"),
+                           {"role": "admin", "name": "Administrator", "id": 1})
+        self.assertEqual(self.order["status"], "plan_completed")
+
 
 if __name__ == "__main__":
     unittest.main()

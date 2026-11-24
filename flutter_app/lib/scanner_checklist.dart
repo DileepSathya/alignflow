@@ -27,6 +27,7 @@ class _ScannerChecklistState extends State<ScannerChecklist> {
       pending &&
       widget.order['can_prepare_documents'] != false &&
       ['marketing', 'scanner', 'clinic_admin', 'clinician'].contains(widget.role);
+  bool get canSelectFiles => canEdit || (pending && widget.role == 'admin');
   bool get reviewing =>
       ['planning', 'admin'].contains(widget.role) &&
       widget.order['status'] == 'planner_document_review';
@@ -99,6 +100,9 @@ class _ScannerChecklistState extends State<ScannerChecklist> {
                                 children: [
                               Text(
                                   'Select at least ${item['min_files']} file(s). Earlier uploads remain available.'),
+                              if (docs.isEmpty && widget.role == 'admin')
+                                const Text(
+                                    'Add compatible files in Documents first.'),
                               for (final doc in docs)
                                 CheckboxListTile(
                                     value: selected.contains(doc['id']),
@@ -112,7 +116,8 @@ class _ScannerChecklistState extends State<ScannerChecklist> {
                                             selected.remove(doc['id']);
                                           }
                                         })),
-                              if (item['allow_text'] == true)
+                              if (item['allow_text'] == true &&
+                                  widget.role != 'admin')
                                 TextFormField(
                                     initialValue: text,
                                     onChanged: (value) => text = value,
@@ -229,34 +234,16 @@ class _ScannerChecklistState extends State<ScannerChecklist> {
                                 Text(
                                     'Exception: ${item['waiver']['reason']} — ${item['waiver']['by']}'),
                               Wrap(spacing: 8, children: [
-                                if (canEdit)
+                                if (canSelectFiles)
                                   TextButton(
                                       onPressed: busy ? null : () => edit(item),
-                                      child: const Text(
-                                          'Select files / edit instructions')),
-                                if (pending && widget.role == 'admin')
-                                  TextButton(
-                                      onPressed: busy
-                                          ? null
-                                          : () async {
-                                              final reason = await ask(
-                                                  'Authorize exception: ${item['label']}');
-                                              if (reason != null) {
-                                                await run(() async {
-                                                  await widget.api.request(
-                                                      'PUT',
-                                                      '$base/checklist/${item['id']}',
-                                                      {
-                                                        'waiver_reason': reason
-                                                      });
-                                                });
-                                              }
-                                            },
-                                      child: const Text('Authorize exception')),
+                                      child: Text(widget.role == 'admin'
+                                          ? 'Select files'
+                                          : 'Select files / edit instructions')),
                               ]),
                               const Divider(),
                             ])),
-                  if (canEdit)
+                  if (canSelectFiles)
                     Wrap(spacing: 12, runSpacing: 8, children: [
                       FilledButton(
                           onPressed: busy ||

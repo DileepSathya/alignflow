@@ -719,6 +719,9 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
   String? error;
   final comment = TextEditingController();
   bool busy = false;
+  bool get canReviewPlan =>
+      const {'admin', 'marketing', 'clinic_admin', 'clinician'}
+          .contains(widget.role);
   final Set<String> collapsedSections = {
     'patient',
     'clinic',
@@ -1255,8 +1258,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                                 }
                                               })
                                     : null),
-                          if (widget.role != 'admin' &&
-                              data['status'] != 'cancelled')
+                          if (data['status'] != 'cancelled')
                             OutlinedButton.icon(
                                 onPressed: busy ? null : addFiles,
                                 icon: const Icon(Icons.upload_file),
@@ -1329,9 +1331,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                                 '/api/orders/${widget.orderId}/issues/${item['id']}/resolve'),
                                         child: const Text('Resolve'))
                                     : null),
-                          if ((['marketing', 'clinic_admin', 'clinician']
-                                      .contains(widget.role) &&
-                                  data['status'] == 'plan_completed') ||
+                          if ((canReviewPlan && data['status'] == 'plan_completed') ||
                               (widget.qcMode &&
                                   data['status'] == 'manufactured'))
                             Align(
@@ -1450,9 +1450,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                   {'status': 'plan_completed'}),
                           child: const Text('Plan completed')),
                   ]),
-                if (['marketing', 'clinic_admin', 'clinician']
-                        .contains(widget.role) &&
-                    data['status'] == 'plan_completed')
+                if (canReviewPlan && data['status'] == 'plan_completed')
                   FilledButton(
                       onPressed: busy
                           ? null
@@ -1461,8 +1459,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                               '/api/orders/${widget.orderId}/status',
                               {'status': 'clinician_approved'}),
                       child: const Text('Clinician approved')),
-                if (['marketing', 'clinic_admin', 'clinician']
-                        .contains(widget.role) &&
+                if (canReviewPlan &&
                     data['status'] == 'clinician_issues' &&
                     (data['issues'] as List).isEmpty)
                   OutlinedButton(

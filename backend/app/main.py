@@ -53,6 +53,7 @@ def load_teams():
 
 TEAMS = load_teams()
 CLINIC_ROLES = {"clinic_admin", "clinician"}
+CLINICAL_REVIEW_ROLES = {"admin", "marketing"} | CLINIC_ROLES
 TEAM_IDS = {team["id"] for team in TEAMS}
 mongo = MongoClient(settings.mongodb_url, serverSelectionTimeoutMS=3000)[settings.mongodb_database]
 orders = mongo.orders
@@ -826,15 +827,16 @@ def update_checklist(order_id: str, item_id: str, body: ChecklistInput, user=Dep
         item["waiver"] = {"reason": body.waiver_reason.strip(), "by": user["name"],
                           "user_id": user["id"], "at": now().isoformat()}
     else:
-        if user["role"] == "admin" or (body.verified and user["role"] != "scanner"):
+        if body.verified and user["role"] != "scanner":
             raise HTTPException(status_code=403, detail="Only Scanner can verify items")
         docs = {d["id"]: d for d in doc["documents"]}
         if any(key not in docs or Path(docs[key]["name"]).suffix.lower() not in item["extensions"]
                for key in body.document_ids):
             raise HTTPException(status_code=422, detail="Select valid files from this order")
-        if body.text.strip() and not item["allow_text"]:
+        text = item["text"] if user["role"] == "admin" else body.text.strip()
+        if text and not item["allow_text"]:
             raise HTTPException(status_code=422, detail="This item requires files")
-        item.update(document_ids=list(dict.fromkeys(body.document_ids)), text=body.text.strip(),
+        item.update(document_ids=list(dict.fromkeys(body.document_ids)), text=text,
                     verified=body.verified, waiver=None)
         if body.verified and not item_ready(item, doc):
             raise HTTPException(status_code=409, detail="Upload all required files before verifying")
@@ -868,7 +870,7 @@ def mapping_snapshot(item):
 
 @app.post("/api/orders/{order_id}/document-review/submit")
 def submit_documents(order_id: str, user=Depends(current_user)):
-    if user["role"] not in PREPARERS:
+    if user["role"] not in PREPARERS | {"admin"}:
         raise HTTPException(status_code=403, detail="Document preparer required")
     doc = scanner_review_order(order_id, user)
     previous = (doc.get("missing_request") or {}).get("mappings", {})
@@ -1510,7 +1512,7 @@ def add_issue(order_id: str, body: IssueInput, user=Depends(current_user)):
     doc = get_order(order_id, user)
     if doc["status"] == "cancelled":
         raise HTTPException(status_code=409, detail="Order is cancelled")
-    if user["role"] in {"marketing", "clinic_admin", "clinician"}:
+    if user["role"] in CLINICAL_REVIEW_ROLES:
         source_status, issue_status, target_team = "plan_completed", "clinician_issues", "planning"
     elif user["role"] == "planning":
         source_status, issue_status, target_team = "manufactured", "qc_issues", "production"
@@ -1680,8 +1682,8 @@ def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
             raise HTTPException(status_code=409, detail="Order cannot be cancelled after clinician approval")
     else:
         legacy_review_reset = (target == "plan_completed" and doc["status"] == "clinician_issues"
-                               and user["role"] in {"marketing", "clinic_admin", "clinician"} and not doc["issues"])
-        clinical_approval = target == "clinician_approved" and user["role"] in {"marketing", "clinic_admin", "clinician"}
+                               and user["role"] in CLINICAL_REVIEW_ROLES and not doc["issues"])
+        clinical_approval = target == "clinician_approved" and user["role"] in CLINICAL_REVIEW_ROLES
         admin_plan = target == "plan_completed" and user["role"] == "admin" and (doc.get("assigned_planner") or {}).get("id") == user["id"]
         if not legacy_review_reset and not clinical_approval and not admin_plan and (target not in STATUS_ROLES or user["role"] != STATUS_ROLES[target]):
             raise HTTPException(status_code=403, detail="Team cannot set this status")

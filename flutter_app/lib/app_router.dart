@@ -244,7 +244,8 @@ class AppRouter extends RouterDelegate<AppRoutePath>
                   api: api,
                   orderId: orderId,
                   role: role,
-                  userId: role == 'planning' && safeSection != '/planning/qc'
+                  userId: role == 'admin' ||
+                          (role == 'planning' && safeSection != '/planning/qc')
                       ? user!['id'] as int
                       : null,
                   qcMode: parts.last == 'qc')),

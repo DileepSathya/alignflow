@@ -30,7 +30,10 @@ class ScannerTests(unittest.TestCase):
 
     def update(self, guard, change, **kw):
         for key, value in guard.items():
-            if self.doc.get(key) != value:
+            actual = self.doc.get(key)
+            if key == 'assigned_planner.id':
+                actual = (self.doc.get('assigned_planner') or {}).get('id')
+            if actual != value:
                 return None
         self.doc.update(deepcopy(change.get('$set', {})))
         for key, amount in change.get('$inc', {}).items():
@@ -145,6 +148,51 @@ class ScannerTests(unittest.TestCase):
     def test_scanner_cannot_authorize_exception(self):
         self.assert_status(403, main.update_checklist, self.doc['order_id'], 'upper_arch',
                            main.ChecklistInput(waiver_reason='missing'), user=SCANNER)
+
+    def test_admin_can_upload_and_select_a_required_file(self):
+        order_id = self.doc['order_id']
+        self.store.update_one.side_effect = lambda guard, change: SimpleNamespace(
+            matched_count=int(self.update(guard, change) is not None))
+        upload = UploadFile(filename='upper.stl', file=io.BytesIO(b'solid scan'),
+                            headers=Headers({'content-type': 'application/octet-stream'}))
+        with tempfile.TemporaryDirectory() as directory, patch.object(main.settings, 'data_dir', Path(directory)):
+            order = asyncio.run(main.upload_order_document(order_id, upload, user=ADMIN))['order']
+        document = order['documents'][0]
+        self.assertEqual(document['role'], 'admin')
+        selection = main.ChecklistInput(document_ids=[document['id']])
+        result = main.update_checklist(order_id, 'upper_arch', selection, user=ADMIN)['order']
+        self.assertEqual(result['checklist'][0]['document_ids'], [document['id']])
+        self.assert_status(403, main.update_checklist, order_id, 'upper_arch',
+                           main.ChecklistInput(verified=True), user=ADMIN)
+        self.assert_status(409, main.submit_documents, order_id, user=ADMIN)
+
+    def test_admin_can_submit_and_approve_complete_documents(self):
+        order_id = self.doc['order_id']
+        for item in self.doc['checklist']:
+            document_ids = []
+            for index in range(item['min_files']):
+                key = f"{item['id']}-{index}"
+                self.doc['documents'].append({'id': key, 'name': key + item['extensions'][0]})
+                document_ids.append(key)
+            item['document_ids'] = document_ids
+        review = main.submit_documents(order_id, user=ADMIN)['order']
+        self.assertEqual(review['status'], main.DOCUMENT_REVIEW)
+        approved = main.approve_documents(order_id,
+            main.DocumentDecision(revision=review['review_revision']), user=ADMIN)['order']
+        self.assertEqual(approved['status'], 'submitted')
+        self.assertTrue(approved['scanner_approved'])
+        self.assertEqual(approved['planner_document_approval']['user_id'], ADMIN['id'])
+
+    def test_admin_can_claim_order_dropped_by_planner(self):
+        self.doc.update(status='submitted', scanner_approved=True)
+        order_id = self.doc['order_id']
+        main.assign_order(order_id, user=PLANNER)
+        dropped = main.change_assignment(order_id, main.AssignmentChange(reason='Unavailable'), user=PLANNER)['order']
+        self.assertEqual(dropped['status'], 'submitted')
+        self.assertIsNone(dropped['assigned_planner'])
+        claimed = main.admin_assign_order(order_id, main.AdminAssignment(user_id=ADMIN['id']), admin=ADMIN)['order']
+        self.assertEqual(claimed['status'], 'planning_in_progress')
+        self.assertEqual(claimed['assigned_planner']['id'], ADMIN['id'])
 
     def test_missing_request_visible_to_marketing(self):
         main.request_missing(self.doc['order_id'], main.MissingItemsInput(note='Please upload scans'), user=SCANNER)
