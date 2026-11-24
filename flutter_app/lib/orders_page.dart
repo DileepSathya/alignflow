@@ -927,6 +927,93 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
     notes.dispose();
   }
 
+  String activityTimestamp(Object? value) {
+    final time = DateTime.tryParse(value?.toString() ?? '')?.toLocal();
+    if (time == null) return 'Unknown time';
+    final date = MaterialLocalizations.of(context).formatMediumDate(time);
+    final clock = [time.hour, time.minute, time.second]
+        .map((part) => part.toString().padLeft(2, '0'))
+        .join(':');
+    return '$date · $clock';
+  }
+
+  String activityStatus(Object value) =>
+      _statuses[value] ?? value.toString().replaceAll('_', ' ');
+
+  Future<void> showActivity() async {
+    final path = '/api/orders/${widget.orderId}/activity';
+    Future<Map<String, dynamic>>? request;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Order activity'),
+        content: SizedBox(
+          width: 560,
+          height: MediaQuery.sizeOf(context).height * .55,
+          child: FutureBuilder(
+            future: request ??= widget.api.request('GET', path),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return const Center(
+                    child: Text('Could not load order activity.'));
+              }
+              final result = snapshot.data;
+              if (result == null) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final entries = result['activity'] as List;
+              if (entries.isEmpty) {
+                return const Center(child: Text('No activity recorded.'));
+              }
+              return ListView.separated(
+                itemCount: entries.length,
+                separatorBuilder: (context, index) => const Divider(),
+                itemBuilder: (context, index) {
+                  final entry = entries[index] as Map;
+                  final actor = entry['actor'] as Map;
+                  final details = entry['details'] as Map;
+                  final previous = details['from_status'];
+                  final next = details['to_status'];
+                  final fields = details['fields'] as List?;
+                  final items = details['items'] as List?;
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(entry['action'].toString()),
+                    subtitle: Text([
+                      '${actor['name'] ?? 'Unknown user'} · '
+                          '${activityTimestamp(entry['at'])}',
+                      if (next != null)
+                        previous == null
+                            ? activityStatus(next)
+                            : '${activityStatus(previous)} → '
+                                '${activityStatus(next)}',
+                      if (details['assignee'] != null)
+                        'Assigned to ${details['assignee']}',
+                      if (details['document'] != null)
+                        details['document'].toString(),
+                      if (details['item'] != null) details['item'].toString(),
+                      if (items != null) items.join(', '),
+                      if (fields != null)
+                        fields
+                            .map((field) =>
+                                field.toString().replaceAll('_', ' '))
+                            .join(', '),
+                    ].join('\n')),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close')),
+        ],
+      ),
+    );
+  }
+
   Widget panel(String title, Widget child, {String? section}) => Card(
       child: Padding(
           padding: const EdgeInsets.all(16),
@@ -972,6 +1059,18 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                     style: const TextStyle(
                         fontSize: 26, fontWeight: FontWeight.bold)),
                 Text(_statuses[data['status']] ?? '${data['status']}'),
+                const SizedBox(height: 8),
+                Text('Created on ${activityTimestamp(data['created_at'])}'),
+                Text(
+                    'Created by ${(data['created_by'] as Map?)?['name'] ?? 'Unknown user'}'),
+                Text('Last modified ${activityTimestamp(data['updated_at'])}'),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                      onPressed: showActivity,
+                      icon: const Icon(Icons.history),
+                      label: const Text('View activity')),
+                ),
                 if (error != null)
                   Text(error!, style: const TextStyle(color: Colors.red)),
                 const SizedBox(height: 12),

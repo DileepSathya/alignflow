@@ -24,7 +24,7 @@ class FakeOrders:
             else:
                 self.order[key] = value
         for key, value in update.get("$push", {}).items():
-            self.order[key].append(value)
+            self.order.setdefault(key, []).append(value)
         return self.order
 
 

@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 from copy import deepcopy
+from datetime import timedelta
 from unittest.mock import patch, MagicMock
 from fastapi import HTTPException
 from starlette.datastructures import Headers, UploadFile
@@ -78,6 +79,27 @@ class ScannerTests(unittest.TestCase):
     def test_missing_files_cannot_be_verified(self):
         self.assert_status(409, main.update_checklist, self.doc['order_id'], 'upper_arch',
                            main.ChecklistInput(verified=True), user=SCANNER)
+
+    def test_activity_combines_legacy_history_and_new_scanner_action(self):
+        timestamp = (main.now() - timedelta(days=1)).replace(microsecond=123000)
+        self.doc.update(
+            created_at=timestamp, created_by=MARKETING, clinic_id=10,
+            history=[{"status": "scanner_review", "at": timestamp, "by": MARKETING["name"]},
+                     {"status": "scanner_missing", "at": timestamp, "by": SCANNER["name"]}],
+            scanner_history=[{"action": "Requested missing items", "by": SCANNER["name"],
+                              "at": timestamp.replace(microsecond=123456).isoformat(),
+                              "details": {"status": "scanner_missing"}}],
+        )
+        main.update_checklist(self.doc["order_id"], "upper_arch",
+                              main.ChecklistInput(), user=SCANNER)
+        entries = main.order_activity_detail(self.doc["order_id"], user=SCANNER)["activity"]
+        self.assertEqual([entry["action"] for entry in entries],
+                         ["Updated upper_arch", "Requested missing items", "Order created"])
+        self.assertEqual(entries[0]["actor"], SCANNER)
+        self.assertEqual(entries[0]["at"], self.doc["updated_at"])
+        self.assertEqual(entries[1]["details"]["to_status"], "scanner_missing")
+        other_clinic = {"role": "clinic_admin", "clinic_id": 11}
+        self.assert_status(404, main.order_activity_detail, self.doc["order_id"], user=other_clinic)
 
     def test_marketing_cannot_verify_or_approve(self):
         self.assert_status(403, main.update_checklist, self.doc['order_id'], 'upper_arch',
