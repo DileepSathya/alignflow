@@ -720,6 +720,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
   final comment = TextEditingController();
   bool busy = false;
   bool get canManufacture => widget.role == 'production' || widget.role == 'admin';
+  bool get canReviewQc => const {'admin', 'production', 'planning'}.contains(widget.role);
   bool get canReviewPlan =>
       const {'admin', 'marketing', 'clinic_admin', 'clinician'}
           .contains(widget.role);
@@ -840,7 +841,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
   }
 
   Future<void> raiseIssue() async {
-    final isQc = widget.qcMode;
+    final isQc = order?['status'] == 'manufactured';
     final details = await showDialog<({String text, List<PlatformFile> files})>(
         context: context,
         builder: (_) => RaiseIssueDialog(
@@ -1333,7 +1334,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                         child: const Text('Resolve'))
                                     : null),
                           if ((canReviewPlan && data['status'] == 'plan_completed') ||
-                              (widget.qcMode &&
+                              (canReviewQc &&
                                   data['status'] == 'manufactured'))
                             Align(
                                 alignment: Alignment.centerRight,
@@ -1492,7 +1493,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                               '/api/orders/${widget.orderId}/status',
                               {'status': 'manufactured'}),
                       child: const Text('Send to QC')),
-                if (widget.qcMode && data['status'] == 'manufactured')
+                if (canReviewQc && data['status'] == 'manufactured')
                   FilledButton(
                       onPressed: busy
                           ? null

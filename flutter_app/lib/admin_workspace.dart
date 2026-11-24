@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'admin_page.dart';
 import 'lab_orders_page.dart';
+import 'qc_orders_page.dart';
 import 'demo_style.dart';
 import 'orders_page.dart';
 import 'clinic_approvals.dart';
@@ -31,6 +32,7 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
     'All orders',
     'Planning',
     'Production',
+    'QC',
     'Users',
     'Clinics',
     'Performance'
@@ -39,6 +41,7 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
     Icons.receipt_long_outlined,
     Icons.assignment_ind_outlined,
     Icons.factory_outlined,
+    Icons.fact_check_outlined,
     Icons.people_outline,
     Icons.verified_outlined,
     Icons.bar_chart_outlined
@@ -65,6 +68,7 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
         padding: const EdgeInsets.fromLTRB(14, 20, 14, 20),
         child:
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Expanded(child: Material(color: Colors.white, child: ListView(primary: false, padding: EdgeInsets.zero, children: [
           const Padding(
               padding: EdgeInsets.symmetric(horizontal: 8),
               child: BrandLogo()),
@@ -132,12 +136,13 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
                         'All orders': '/admin/orders',
                         'Planning': '/admin/planning',
                         'Production': '/admin/production',
+                        'QC': '/admin/qc',
                         'Users': '/admin/users',
                         'Clinics': '/admin/clinics',
                         'Performance': '/admin/performance'
                       }[sections[i]]!);
                     })),
-          const Spacer(),
+          ]))),
           const Divider(),
           OutlinedButton(
               onPressed: () async {
@@ -158,6 +163,7 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
               onUsersChanged: refreshCounts),
           'Performance' => AdminPerformanceView(api: widget.api),
           'Planning' => AdminPlanningView(api: widget.api, user: widget.user),
+          'QC' => QcOrdersPage(api: widget.api, user: widget.user, onLogout: widget.onLogout, embedded: true),
           'Production' => LabOrdersPage(
               api: widget.api, user: widget.user, onLogout: widget.onLogout, embedded: true),
           'Clinics' => ClinicApprovals(api: widget.api),

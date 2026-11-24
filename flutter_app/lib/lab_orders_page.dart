@@ -153,6 +153,14 @@ class _LabOrdersPageState extends State<LabOrdersPage> {
                     borderRadius: BorderRadius.circular(20)),
                 child: Text('${overview['all_orders'] ?? '—'}',
                     style: const TextStyle(fontSize: 11)))),
+        ListTile(
+            dense: true,
+            leading: const Icon(Icons.fact_check_outlined),
+            title: const Text('QC'),
+            onTap: () {
+              if (compact) Navigator.of(context).pop();
+              AppRouter.of(context).go('/production/qc');
+            }),
         const Spacer(),
         const Divider(),
         OutlinedButton(

@@ -16,11 +16,13 @@ class QcOrdersPage extends StatefulWidget {
   final Api api;
   final Map<String, dynamic> user;
   final VoidCallback onLogout;
+  final bool embedded;
   const QcOrdersPage(
       {super.key,
       required this.api,
       required this.user,
-      required this.onLogout});
+      required this.onLogout,
+      this.embedded = false});
 
   @override
   State<QcOrdersPage> createState() => _QcOrdersPageState();
@@ -127,7 +129,7 @@ class _QcOrdersPageState extends State<QcOrdersPage> {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                             fontSize: 12, fontWeight: FontWeight.w700)),
-                    const Text('Planning team',
+                    Text(widget.user['role'] == 'production' ? 'Production team' : 'Planning team',
                         style: TextStyle(fontSize: 11, color: DemoStyle.muted)),
                   ]))
             ])),
@@ -145,7 +147,7 @@ class _QcOrdersPageState extends State<QcOrdersPage> {
                 style: TextStyle(fontSize: 13, color: DemoStyle.accent)),
             onTap: () {
               if (compact) Navigator.of(context).pop();
-              AppRouter.of(context).go('/planning/orders');
+              AppRouter.of(context).go('/${widget.user['role']}/orders');
             },
             trailing: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -174,6 +176,7 @@ class _QcOrdersPageState extends State<QcOrdersPage> {
   Widget build(BuildContext context) {
     final compact = MediaQuery.sizeOf(context).width <= 900;
     final clinics = (overview['clinics'] as List?) ?? [];
+    if (widget.embedded) return queue(clinics, compact);
     return Scaffold(
         drawer: compact ? Drawer(child: rail(true)) : null,
         body: Row(children: [
@@ -187,8 +190,12 @@ class _QcOrdersPageState extends State<QcOrdersPage> {
                       leading: IconButton(
                           icon: const Icon(Icons.menu),
                           onPressed: () => Scaffold.of(context).openDrawer()))),
-            Expanded(
-                child: Center(
+            Expanded(child: queue(clinics, compact)),
+          ]))
+        ]));
+  }
+
+  Widget queue(List clinics, bool compact) => Center(
                     child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 1180),
                         child: Padding(
@@ -384,10 +391,7 @@ class _QcOrdersPageState extends State<QcOrdersPage> {
                                               icon: const Icon(
                                                   Icons.chevron_right)),
                                         ]),
-                                ]))))),
-          ]))
-        ]));
-  }
+                                ]))));
 }
 
 String _qcStatus(Map<String, dynamic> order) {

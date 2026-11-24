@@ -42,6 +42,23 @@ class _OrderApi extends Api {
 }
 
 void main() {
+  testWidgets('admin navigation scrolls on short screens', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1100, 420);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(MaterialApp(home: AdminWorkspace(
+        api: _OrderApi(), user: const {'id': 7}, onLogout: () {},
+        initialSection: 'Planning')));
+    await tester.pumpAndSettle();
+    final menu = find.ancestor(of: find.text('Administrator'), matching: find.byType(ListView));
+    await tester.drag(menu, const Offset(0, -400));
+    await tester.pumpAndSettle();
+    expect(find.text('Performance').hitTestable(), findsOneWidget);
+    expect(find.text('Log out').hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('admin submission refreshes the overview and filtered list',
       (tester) async {
     final api = _OrderApi();

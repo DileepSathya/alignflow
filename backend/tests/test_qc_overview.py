@@ -66,7 +66,7 @@ class QcOverviewTests(unittest.TestCase):
 
     def test_other_roles_cannot_read_qc_overview(self):
         with self.assertRaises(HTTPException) as caught:
-            main.qc_overview(user={"role": "production"})
+            main.qc_overview(user={"role": "marketing"})
         self.assertEqual(caught.exception.status_code, 403)
 
 

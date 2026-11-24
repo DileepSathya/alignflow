@@ -177,6 +177,7 @@ class AppRouter extends RouterDelegate<AppRoutePath>
           '/admin/orders',
           '/admin/planning',
           '/admin/production',
+          '/admin/qc',
           '/admin/users',
           '/admin/clinics',
           '/admin/performance'
@@ -189,7 +190,7 @@ class AppRouter extends RouterDelegate<AppRoutePath>
         ],
       'clinician' => ['/clinic/dashboard', '/clinic/orders'],
       'planning' => ['/planning/orders', '/planning/qc'],
-      'production' => ['/production/orders'],
+      'production' => ['/production/orders', '/production/qc'],
       _ => ['/scanner/orders'],
     };
     final safeSection =
@@ -208,6 +209,7 @@ class AppRouter extends RouterDelegate<AppRoutePath>
             '/admin/orders': 'All orders',
             '/admin/planning': 'Planning',
             '/admin/production': 'Production',
+            '/admin/qc': 'QC',
             '/admin/users': 'Users',
             '/admin/clinics': 'Clinics',
             '/admin/performance': 'Performance'
@@ -229,7 +231,7 @@ class AppRouter extends RouterDelegate<AppRoutePath>
             '/clinic/orders': 'Orders',
             '/clinic/clinicians': 'Clinicians'
           }[safeSection]!),
-      'planning' when safeSection == '/planning/qc' =>
+      'planning' || 'production' when safeSection.endsWith('/qc') =>
         QcOrdersPage(api: api, user: user!, onLogout: logout),
       'planning' => CadOrdersPage(api: api, user: user!, onLogout: logout),
       'production' => LabOrdersPage(api: api, user: user!, onLogout: logout),

@@ -87,11 +87,11 @@ class QcIssueTests(unittest.TestCase):
         self.assertEqual(caught.exception.status_code, 403)
         self.assertEqual(self.order["status"], "qc_approved")
 
-    def test_lab_cannot_raise_and_marketing_flow_still_works(self):
+    def test_marketing_cannot_raise_qc_issue_but_can_raise_clinician_feedback(self):
         with self.assertRaises(HTTPException) as caught:
             main.add_issue("ORD-000001", main.IssueInput(text="Problem", raised_to="production"),
-                           user={"role": "production", "name": "Maker"})
-        self.assertEqual(caught.exception.status_code, 403)
+                           user={"role": "marketing", "name": "Marketer"})
+        self.assertEqual(caught.exception.status_code, 409)
         self.order["status"] = "plan_completed"
         main.add_issue("ORD-000001", main.IssueInput(text="Clinician feedback", raised_to="planning"),
                        user={"role": "marketing", "name": "Marketer"})
@@ -104,13 +104,24 @@ class QcIssueTests(unittest.TestCase):
         for status in ("manufacturing_in_process", "manufactured"):
             main.change_status("ORD-000001", main.StatusInput(status=status), user=admin)
             self.assertEqual(self.order["status"], status)
-        self.raise_qc_issue()
+        main.add_issue("ORD-000001", main.IssueInput(text="Remake tray", raised_to="production"), admin)
         main.resolve_issue("ORD-000001", self.order["issues"][0]["id"], user=admin)
         self.assertEqual(self.order["status"], "manufactured")
         self.assertEqual(self.order["history"][-1]["by"], admin["name"])
+        main.change_status("ORD-000001", main.StatusInput(status="qc_approved"), user=admin)
+        self.assertEqual(self.order["status"], "qc_approved")
+
+    def test_production_can_review_and_approve_after_resolution(self):
+        maker = {"role": "production", "name": "Maker"}
+        main.add_issue("ORD-000001", main.IssueInput(text="Remake tray", raised_to="production"), maker)
+        approval = main.StatusInput(status="qc_approved")
         with self.assertRaises(HTTPException) as caught:
-            main.change_status("ORD-000001", main.StatusInput(status="qc_approved"), user=admin)
-        self.assertEqual(caught.exception.status_code, 403)
+            main.change_status("ORD-000001", approval, maker)
+        self.assertEqual(caught.exception.status_code, 409)
+        main.resolve_issue("ORD-000001", self.order["issues"][0]["id"], maker)
+        main.change_status("ORD-000001", approval, maker)
+        self.assertEqual(self.order["history"][-1]["by"], "Maker")
+        self.assertEqual(self.order["status"], "qc_approved")
 
     def test_admin_can_raise_clinician_issue_and_approve_after_resolution(self):
         admin = {"role": "admin", "name": "Administrator", "id": 1}
