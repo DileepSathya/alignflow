@@ -966,6 +966,20 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
     notes.dispose();
   }
 
+  String stageEntryLabel(Map<String, dynamic> data) {
+    final history = (data['history'] as List?) ?? [];
+    for (final event in history.reversed) {
+      if (event['status'] == data['status']) {
+        final at = event['at'];
+        if (DateTime.tryParse(at?.toString() ?? '') != null) {
+          return 'Entered stage ${activityTimestamp(at)}';
+        }
+        break;
+      }
+    }
+    return 'Stage entry time unavailable';
+  }
+
   String activityTimestamp(Object? value) {
     final time = DateTime.tryParse(value?.toString() ?? '')?.toLocal();
     if (time == null) return 'Unknown time';
@@ -1098,6 +1112,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                     style: const TextStyle(
                         fontSize: 26, fontWeight: FontWeight.bold)),
                 Text(_statuses[data['status']] ?? '${data['status']}'),
+                if (widget.role == 'admin') Text(stageEntryLabel(data)),
                 const SizedBox(height: 8),
                 Text('Created on ${activityTimestamp(data['created_at'])}'),
                 Text(

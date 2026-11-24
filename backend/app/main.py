@@ -1063,12 +1063,30 @@ def create_order(body: OrderInput, user=Depends(current_user), conn=Depends(conn
     return {"order": public_order(doc)}
 
 
+def performance_period(period):
+    try:
+        start = datetime.strptime(period, "%Y-%m").replace(tzinfo=timezone.utc)
+        end = datetime(start.year + (start.month == 12), start.month % 12 + 1, 1, tzinfo=timezone.utc)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid month")
+    return start, end
+
+
+@app.get("/api/performance/clinics")
+def performance_clinics(marketer_id: int, period: str, admin=Depends(admin_user), conn=Depends(connection)):
+    start, end = performance_period(period)
+    with conn.cursor() as cur:
+        cur.execute("SELECT id, clinic_name FROM clinics WHERE created_by = %s "
+                    "AND created_at >= %s AND created_at < %s ORDER BY clinic_name, id",
+                    (marketer_id, start, end))
+        return {"clinics": cur.fetchall()}
+
+
 @app.get("/api/performance")
 def marketing_performance(year: int, month: int, user=Depends(admin_user), conn=Depends(connection)):
     if not 2000 <= year <= 2100 or not 1 <= month <= 12:
         raise HTTPException(status_code=400, detail="Invalid year or month")
-    start = datetime(year, month, 1, tzinfo=timezone.utc)
-    end = datetime(year + (month == 12), month % 12 + 1, 1, tzinfo=timezone.utc)
+    start, end = performance_period(f"{year}-{month:02d}")
     with conn.cursor() as cur:
         cur.execute("SELECT id, name FROM users WHERE role = 'marketing' ORDER BY name")
         marketers = cur.fetchall()
@@ -1155,10 +1173,24 @@ def clinic_overview(user=Depends(current_user)):
             "recent": sorted(summaries, key=lambda r: r["updated_at"], reverse=True)[:10]}
 
 
+ADMIN_STAGE_GROUPS = {
+    "scanner": SCANNER_STEPS,
+    "document_review": [DOCUMENT_REVIEW],
+    "in_plan": ["submitted", "planning_in_progress", "plan_completed", "clinician_issues"],
+    "in_manufacturing": ["clinician_approved", "manufacturing_in_process"],
+    "in_qc": ["manufactured", "qc_issues"],
+    "completed": ["qc_approved", "manufacture_completed"],
+    "cancelled": ["cancelled"],
+    "review_pending": ["plan_completed"],
+}
+
+
 @app.get("/api/orders")
 def list_orders(q: str = "", status_filter: str = "", status_group: str = "", view: str = "",
                 clinic_id: int | None = None, page: int = 1, limit: int = 25, mine: bool = False, scanner_approved: bool = False,
     scanner_missing: bool = False, clinician_id: int | None = None, created_month: str = "",
+                admin_bucket: str = "",
+                marketer_id: int | None = None, period: str = "",
                 user=Depends(current_user)):
     if page < 1 or not 1 <= limit <= 100:
         raise HTTPException(status_code=400, detail="Invalid page or limit")
@@ -1230,7 +1262,7 @@ def list_orders(q: str = "", status_filter: str = "", status_group: str = "", vi
         elif (qc_view or user["role"] == "planning") and status_group == "qc_approval_pending":
             query["issues"] = {"$not": {"$elemMatch": resolved_issue}}
     if clinic_id is not None:
-        if user["role"] != "planning" and not production_view and not qc_view:
+        if user["role"] not in {"planning", "admin"} and not production_view and not qc_view:
             raise HTTPException(status_code=403, detail="Team cannot filter clinics")
         query["clinic_id"] = clinic_id
     if status_filter:
@@ -1251,9 +1283,24 @@ def list_orders(q: str = "", status_filter: str = "", status_group: str = "", vi
         query["$and"] = [planning_visibility()]
     if user["role"] == "scanner":
         query.setdefault("checklist", {"$exists": True})
+    if admin_bucket or marketer_id is not None:
+        if user["role"] != "admin" or view:
+            raise HTTPException(status_code=403, detail="Admin filters are restricted")
+    if admin_bucket in ADMIN_STAGE_GROUPS:
+        query.setdefault("$and", []).append({"status": {"$in": ADMIN_STAGE_GROUPS[admin_bucket]}})
+    elif admin_bucket == "open_issues":
+        query["issues"] = {"$elemMatch": {"resolved_at": None}}
+    elif admin_bucket:
+        raise HTTPException(status_code=400, detail="Invalid dashboard filter")
+    if marketer_id is not None:
+        start, end = performance_period(period)
+        query["created_at"] = {"$gte": start, "$lt": end}
+        query["created_by.id"] = marketer_id
+        query.setdefault("$and", []).append({"status": {"$ne": "cancelled"}})
     collection = order_store()
     total = collection.count_documents(query)
-    rows = collection.find(query).sort("created_at", DESCENDING).skip((page - 1) * limit).limit(limit)
+    offset = (page - 1) * limit
+    rows = collection.find(query).sort("created_at", DESCENDING).skip(offset).limit(limit)
     return {"orders": [public_order(row) for row in rows], "total": total, "page": page}
 
 
@@ -1338,27 +1385,27 @@ def qc_overview(user=Depends(current_user)):
 
 
 @app.get("/api/admin/overview")
-def admin_overview(admin=Depends(admin_user), conn=Depends(connection)):
+def admin_overview(admin=Depends(admin_user), conn=Depends(connection), detailed: bool = False):
     rows = list(order_store().aggregate([
         {"$project": {"status": 1, "open_issues": {"$size": {"$filter": {
             "input": {"$ifNull": ["$issues", []]}, "as": "issue",
-            "cond": {"$eq": ["$$issue.resolved_at", None]}}}}}},
+            "cond": {"$eq": [{"$ifNull": ["$$issue.resolved_at", None]}, None]}}}}}},
         {"$group": {"_id": "$status", "count": {"$sum": 1},
-                    "open_issues": {"$sum": "$open_issues"}}},
+                    "open_issues": {"$sum": "$open_issues"},
+                    "open_issue_orders": {"$sum": {"$cond": [{"$gt": ["$open_issues", 0]}, 1, 0]}}}},
     ]))
     statuses = {row["_id"]: row["count"] for row in rows}
     open_issues = sum(row["open_issues"] for row in rows)
     with conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) AS count FROM users WHERE role NOT IN ('clinic_admin', 'clinician')")
         users = cur.fetchone()["count"]
-    return {"total_orders": sum(statuses.values()), "users": users,
-            "in_plan": sum(statuses.get(key, 0) for key in
-                           ("submitted", "planning_in_progress", "plan_completed", "clinician_issues")),
-            "in_manufacturing": statuses.get("clinician_approved", 0) +
-                                statuses.get("manufacturing_in_process", 0),
-            "in_qc": statuses.get("manufactured", 0) + statuses.get("qc_issues", 0),
-            "completed": statuses.get("qc_approved", 0) + statuses.get("manufacture_completed", 0),
-            "cancelled": statuses.get("cancelled", 0), "open_issues": open_issues}
+    result = {"total_orders": sum(statuses.values()), "users": users, "open_issues": open_issues,
+              **{name: sum(statuses.get(key, 0) for key in group)
+                 for name, group in ADMIN_STAGE_GROUPS.items()
+                 if detailed or name not in {"scanner", "document_review", "review_pending"}}}
+    if detailed:
+        result["open_issue_orders"] = sum(row["open_issue_orders"] for row in rows)
+    return result
 
 
 @app.get("/api/orders/{order_id}")

@@ -24,8 +24,8 @@ class _OrderApi extends Api {
         ]
       };
     }
-    if (path == '/api/admin/overview') {
-      return {'total_orders': submitted == null ? 0 : 1};
+    if (uri.path == '/api/admin/overview') {
+      return {'total_orders': submitted == null ? 0 : 1, 'review_pending': 12};
     }
     if (uri.path == '/api/orders' && method == 'GET') {
       listQueries.add(uri);
@@ -42,6 +42,20 @@ class _OrderApi extends Api {
 }
 
 void main() {
+  testWidgets('attention card opens the corresponding paginated queue', (tester) async {
+    final api = _OrderApi();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: AdminOrdersView(api: api, userId: 7)),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Clinician reviews pending'));
+    await tester.pumpAndSettle();
+    final filters = api.listQueries.last.queryParameters;
+    expect(filters, containsPair('admin_bucket', 'review_pending'));
+    expect(filters, isNot(contains('oldest_first')));
+    expect(filters, containsPair('page', '1'));
+  });
+
   testWidgets('admin navigation scrolls on short screens', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1100, 420);

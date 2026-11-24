@@ -4,7 +4,8 @@ import 'marketing_page.dart';
 
 class ClinicApprovals extends StatefulWidget {
   final Api api;
-  const ClinicApprovals({super.key, required this.api});
+  final void Function(int id, String name)? onOrders;
+  const ClinicApprovals({super.key, required this.api, this.onOrders});
   @override
   State<ClinicApprovals> createState() => _ClinicApprovalsState();
 }
@@ -85,7 +86,9 @@ class _ClinicApprovalsState extends State<ClinicApprovals> {
                       'Clinic email': clinic['email'],
                       'Area': clinic['area'],
                     }.entries)
-                      ListTile(title: Text(field.key), subtitle: Text('${field.value ?? ''}')),
+                      ListTile(
+                          title: Text(field.key),
+                          subtitle: Text('${field.value ?? ''}')),
                     for (final person in clinic['clinicians'] as List) ...[
                       const Divider(),
                       for (final field in {
@@ -95,11 +98,17 @@ class _ClinicApprovalsState extends State<ClinicApprovals> {
                         'Clinical role': person['clinical_role'],
                         'Username': person['username'],
                       }.entries)
-                        ListTile(title: Text(field.key), subtitle: Text('${field.value ?? ''}')),
+                        ListTile(
+                            title: Text(field.key),
+                            subtitle: Text('${field.value ?? ''}')),
                     ],
                   ]),
                 ),
-                actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Close'))
+                ],
               ));
     } catch (e) {
       if (mounted) setState(() => error = e.toString());
@@ -130,7 +139,8 @@ class _ClinicApprovalsState extends State<ClinicApprovals> {
                   subtitle: Text(
                       '${item['area']} · ${item['email']} · ${item['contact_number']}\n${item['approval_status'] ?? 'approved'}'),
                   isThreeLine: true,
-                  trailing: item['signup_source'] == 'self' && item['approval_status'] == 'pending'
+                  trailing: item['signup_source'] == 'self' &&
+                          item['approval_status'] == 'pending'
                       ? Wrap(children: [
                           TextButton(
                               onPressed: () => decide(item['id'] as int, false),
@@ -139,6 +149,13 @@ class _ClinicApprovalsState extends State<ClinicApprovals> {
                               onPressed: () => decide(item['id'] as int, true),
                               child: const Text('Approve')),
                         ])
-                      : null)),
+                      : widget.onOrders == null
+                          ? null
+                          : TextButton(
+                              onPressed: () => widget.onOrders!(
+                                  item['id'] as int,
+                                  item['clinic_name'].toString()),
+                              child: const Text('View orders'),
+                            ))),
       ]);
 }

@@ -27,6 +27,8 @@ class AdminWorkspace extends StatefulWidget {
 
 class _AdminWorkspaceState extends State<AdminWorkspace> {
   late String section = widget.initialSection;
+  int? focusedClinicId;
+  String? focusedClinicName;
   int orderCount = 0, userCount = 0;
   final sections = const [
     'All orders',
@@ -66,91 +68,103 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
         width: compact ? 248 : 190,
         color: Colors.white,
         padding: const EdgeInsets.fromLTRB(14, 20, 14, 20),
-        child:
-            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Expanded(child: Material(color: Colors.white, child: ListView(primary: false, padding: EdgeInsets.zero, children: [
-          const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8),
-              child: BrandLogo()),
-          const SizedBox(height: 24),
-          Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                  color: DemoStyle.accentSoft,
-                  border: Border.all(color: DemoStyle.line),
-                  borderRadius: BorderRadius.circular(12)),
-              child: const Row(children: [
-                CircleAvatar(
-                    radius: 16,
-                    backgroundColor: Color(0xFFBCE2DE),
-                    child:
-                        Text('A', style: TextStyle(color: DemoStyle.accent))),
-                SizedBox(width: 8),
-                Expanded(
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                      Text('Admin',
-                          style: TextStyle(fontWeight: FontWeight.w700)),
-                      Text('Administrator',
-                          style:
-                              TextStyle(fontSize: 11, color: DemoStyle.muted)),
-                    ]))
-              ])),
-          const SizedBox(height: 24),
-          for (var i = 0; i < sections.length; i++)
-            Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: ListTile(
-                    leading: Icon(icons[i],
-                        color: section == sections[i]
-                            ? DemoStyle.accent
-                            : DemoStyle.muted),
-                    title:
-                        Text(sections[i], style: const TextStyle(fontSize: 13)),
-                    selected: section == sections[i],
-                    trailing: sections[i] == 'All orders' || sections[i] == 'Users'
-                        ? Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 7, vertical: 2),
-                            decoration: BoxDecoration(
-                                color: section == sections[i]
-                                    ? const Color(0xFFBCE2DE)
-                                    : DemoStyle.surface2,
-                                borderRadius: BorderRadius.circular(20)),
-                            child: Text('${i == 0 ? orderCount : userCount}',
-                                style: const TextStyle(fontSize: 11)))
-                        : null,
-                    selectedTileColor: DemoStyle.accentSoft,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        side: BorderSide(
-                            color: section == sections[i]
-                                ? DemoStyle.accent
-                                : Colors.transparent)),
-                    onTap: () {
-                      if (compact) {
-                        Navigator.pop(context);
-                      }
-                      AppRouter.of(context).go(const {
-                        'All orders': '/admin/orders',
-                        'Planning': '/admin/planning',
-                        'Production': '/admin/production',
-                        'QC': '/admin/qc',
-                        'Users': '/admin/users',
-                        'Clinics': '/admin/clinics',
-                        'Performance': '/admin/performance'
-                      }[sections[i]]!);
-                    })),
-          ]))),
-          const Divider(),
-          OutlinedButton(
-              onPressed: () async {
-                await widget.api.logout();
-                widget.onLogout();
-              },
-              child: const Text('Log out')),
-        ]));
+        child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                  child: Material(
+                      color: Colors.white,
+                      child: ListView(
+                          primary: false,
+                          padding: EdgeInsets.zero,
+                          children: [
+                            const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 8),
+                                child: BrandLogo()),
+                            const SizedBox(height: 24),
+                            Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                    color: DemoStyle.accentSoft,
+                                    border: Border.all(color: DemoStyle.line),
+                                    borderRadius: BorderRadius.circular(12)),
+                                child: const Row(children: [
+                                  CircleAvatar(
+                                      radius: 16,
+                                      backgroundColor: Color(0xFFBCE2DE),
+                                      child: Text('A',
+                                          style: TextStyle(
+                                              color: DemoStyle.accent))),
+                                  SizedBox(width: 8),
+                                  Expanded(
+                                      child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                        Text('Admin',
+                                            style: TextStyle(
+                                                fontWeight: FontWeight.w700)),
+                                        Text('Administrator',
+                                            style: TextStyle(
+                                                fontSize: 11,
+                                                color: DemoStyle.muted)),
+                                      ]))
+                                ])),
+                            const SizedBox(height: 24),
+                            for (var i = 0; i < sections.length; i++)
+                              Padding(
+                                  padding: const EdgeInsets.only(bottom: 4),
+                                  child: ListTile(
+                                      leading: Icon(icons[i],
+                                          color: section == sections[i]
+                                              ? DemoStyle.accent
+                                              : DemoStyle.muted),
+                                      title: Text(sections[i],
+                                          style: const TextStyle(fontSize: 13)),
+                                      selected: section == sections[i],
+                                      trailing: sections[i] == 'All orders' ||
+                                              sections[i] == 'Users'
+                                          ? Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                  horizontal: 7, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                  color: section == sections[i]
+                                                      ? const Color(0xFFBCE2DE)
+                                                      : DemoStyle.surface2,
+                                                  borderRadius: BorderRadius.circular(
+                                                      20)),
+                                              child: Text(
+                                                  '${i == 0 ? orderCount : userCount}',
+                                                  style: const TextStyle(
+                                                      fontSize: 11)))
+                                          : null,
+                                      selectedTileColor: DemoStyle.accentSoft,
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(10),
+                                          side: BorderSide(color: section == sections[i] ? DemoStyle.accent : Colors.transparent)),
+                                      onTap: () {
+                                        if (compact) {
+                                          Navigator.pop(context);
+                                        }
+                                        AppRouter.of(context).go(const {
+                                          'All orders': '/admin/orders',
+                                          'Planning': '/admin/planning',
+                                          'Production': '/admin/production',
+                                          'QC': '/admin/qc',
+                                          'Users': '/admin/users',
+                                          'Clinics': '/admin/clinics',
+                                          'Performance': '/admin/performance'
+                                        }[sections[i]]!);
+                                      })),
+                          ]))),
+              const Divider(),
+              OutlinedButton(
+                  onPressed: () async {
+                    await widget.api.logout();
+                    widget.onLogout();
+                  },
+                  child: const Text('Log out')),
+            ]));
     return RoleShell(
         sidebar: rail(),
         title: section,
@@ -161,12 +175,44 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
               onLogout: widget.onLogout,
               embedded: true,
               onUsersChanged: refreshCounts),
-          'Performance' => AdminPerformanceView(api: widget.api),
+          'Performance' => AdminPerformanceView(
+              api: widget.api, userId: widget.user['id'] as int),
           'Planning' => AdminPlanningView(api: widget.api, user: widget.user),
-          'QC' => QcOrdersPage(api: widget.api, user: widget.user, onLogout: widget.onLogout, embedded: true),
+          'QC' => QcOrdersPage(
+              api: widget.api,
+              user: widget.user,
+              onLogout: widget.onLogout,
+              embedded: true),
           'Production' => LabOrdersPage(
-              api: widget.api, user: widget.user, onLogout: widget.onLogout, embedded: true),
-          'Clinics' => ClinicApprovals(api: widget.api),
+              api: widget.api,
+              user: widget.user,
+              onLogout: widget.onLogout,
+              embedded: true),
+          'Clinics' => focusedClinicId == null
+              ? ClinicApprovals(
+                  api: widget.api,
+                  onOrders: (id, name) {
+                    setState(() {
+                      focusedClinicId = id;
+                      focusedClinicName = name;
+                    });
+                  })
+              : Column(children: [
+                  ListTile(
+                    leading: BackButton(
+                        onPressed: () => setState(() {
+                              focusedClinicId = null;
+                              focusedClinicName = null;
+                            })),
+                    title: Text('$focusedClinicName orders'),
+                  ),
+                  Expanded(
+                      child: AdminOrdersView(
+                    api: widget.api,
+                    userId: widget.user['id'] as int,
+                    initialClinicId: focusedClinicId,
+                  )),
+                ]),
           _ => AdminOrdersView(
               api: widget.api,
               userId: widget.user['id'] as int,
@@ -316,11 +362,17 @@ class AdminOrdersView extends StatefulWidget {
   final Api api;
   final int userId;
   final ValueChanged<Map<String, dynamic>>? onOverviewChanged;
+  final int? marketerId;
+  final String? period;
+  final int? initialClinicId;
   const AdminOrdersView(
       {super.key,
       required this.api,
       required this.userId,
-      this.onOverviewChanged});
+      this.onOverviewChanged,
+      this.marketerId,
+      this.period,
+      this.initialClinicId});
   @override
   State<AdminOrdersView> createState() => _AdminOrdersViewState();
 }
@@ -333,11 +385,54 @@ class _AdminOrdersViewState extends State<AdminOrdersView> {
   String? error;
   final search = TextEditingController();
   String status = '';
+  String bucket = '';
+  late int? clinicId = widget.initialClinicId;
+  int requestId = 0;
+  List<Map<String, dynamic>> clinics = [];
+  String? clinicError;
+  bool get isOverview =>
+      widget.marketerId == null && widget.initialClinicId == null;
+  static const metrics = {
+    '': ('total_orders', 'Total orders'),
+    'review_pending': ('review_pending', 'Clinician reviews pending'),
+    'open_issues': ('open_issue_orders', 'Orders with open issues'),
+    'scanner': ('scanner', 'Scanner review'),
+    'document_review': ('document_review', 'Document review'),
+    'in_plan': ('in_plan', 'In planning'),
+    'in_manufacturing': ('in_manufacturing', 'In manufacturing'),
+    'in_qc': ('in_qc', 'In QC'),
+    'completed': ('completed', 'Completed'),
+    'cancelled': ('cancelled', 'Cancelled'),
+  };
+
+  Future<void> loadClinics() async {
+    try {
+      final result = await widget.api.request('GET', '/api/clinics');
+      if (mounted)
+        setState(() {
+          clinics = (result['clinics'] as List).cast<Map<String, dynamic>>();
+          clinicError = null;
+        });
+    } catch (e) {
+      if (mounted) setState(() => clinicError = e.toString());
+    }
+  }
+
+  void selectBucket(String value) {
+    search.clear();
+    bucket = value;
+    status = '';
+    clinicId = null;
+    page = 1;
+    refresh();
+  }
+
   int page = 1, total = 0;
   @override
   void initState() {
     super.initState();
-    refreshOverview();
+    if (isOverview) refreshOverview();
+    if (widget.initialClinicId == null) loadClinics();
     refresh();
   }
 
@@ -349,7 +444,8 @@ class _AdminOrdersViewState extends State<AdminOrdersView> {
 
   Future<void> refreshOverview() async {
     try {
-      final data = await widget.api.request('GET', '/api/admin/overview');
+      final data =
+          await widget.api.request('GET', '/api/admin/overview?detailed=true');
       if (mounted) {
         setState(() => overview = data);
         widget.onOverviewChanged?.call(data);
@@ -360,6 +456,7 @@ class _AdminOrdersViewState extends State<AdminOrdersView> {
   }
 
   Future<void> refresh() async {
+    final request = ++requestId;
     setState(() {
       loading = true;
       error = null;
@@ -370,19 +467,24 @@ class _AdminOrdersViewState extends State<AdminOrdersView> {
           Uri(path: '/api/orders', queryParameters: {
             'page': '$page',
             'limit': '25',
+            if (bucket.isNotEmpty) 'admin_bucket': bucket,
+            if (clinicId != null) 'clinic_id': '$clinicId',
+            if (widget.marketerId != null)
+              'marketer_id': '${widget.marketerId}',
+            if (widget.period != null) 'period': widget.period!,
             if (search.text.trim().isNotEmpty) 'q': search.text.trim(),
             if (status.isNotEmpty) 'status_filter': status,
           }).toString());
-      if (mounted) {
+      if (mounted && request == requestId) {
         setState(() {
           orders = (result['orders'] as List).cast<Map<String, dynamic>>();
           total = result['total'] as int;
         });
       }
     } catch (e) {
-      if (mounted) setState(() => error = e.toString());
+      if (mounted && request == requestId) setState(() => error = e.toString());
     } finally {
-      if (mounted) setState(() => loading = false);
+      if (mounted && request == requestId) setState(() => loading = false);
     }
   }
 
@@ -418,9 +520,40 @@ class _AdminOrdersViewState extends State<AdminOrdersView> {
 
   Future<void> openOrder(Map<String, dynamic> order) async {
     await AppRouter.of(context).openOrder(order['order_id'] as String);
+    if (!mounted) return;
     refresh();
-    refreshOverview();
+    if (isOverview) refreshOverview();
   }
+
+  String queueDetail(Map<String, dynamic> order) {
+    final events = ((order['history'] as List?) ?? [])
+        .where((event) => event['status'] == order['status']);
+    final entered =
+        events.isEmpty ? null : DateTime.tryParse('${events.last['at']}');
+    final age = entered == null
+        ? 'Stage entry time unavailable'
+        : '${DateTime.now().difference(entered).inDays} days in stage';
+    final openIssues = ((order['issues'] as List?) ?? [])
+        .where((issue) => issue['resolved_at'] == null)
+        .length;
+    return switch (bucket) {
+      'review_pending' => 'Awaiting clinician review · $age',
+      'open_issues' => '$openIssues open issues · $age',
+      _ => age,
+    };
+  }
+
+  Widget metricStrip(Iterable<String> keys) => SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(children: [
+          for (final key in keys)
+            TextButton(
+              onPressed: () => selectBucket(key),
+              child: _AdminStat(
+                  '${overview[metrics[key]!.$1] ?? '—'}', metrics[key]!.$2),
+            ),
+        ]),
+      );
 
   @override
   Widget build(BuildContext context) => Center(
@@ -428,181 +561,218 @@ class _AdminOrdersViewState extends State<AdminOrdersView> {
           constraints: const BoxConstraints(maxWidth: 1400),
           child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 28, 20, 32),
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    DemoPageHeading(
-                        title: 'All orders',
-                        action: FilledButton.icon(
+              child: ListView(primary: false, children: [
+                DemoPageHeading(
+                    title: 'All orders',
+                    action: isOverview
+                        ? FilledButton.icon(
                             onPressed: openingOrderForm ? null : createOrder,
                             icon: const Icon(Icons.add),
-                            label: const Text('Create order')),
-                        subtitle:
-                            'Every order across Marketing, Planning and Production, including QC work, with its full details and current status.'),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                        height: 82,
-                        child: ListView(
-                            scrollDirection: Axis.horizontal,
-                            children: [
-                              _AdminStat('${overview['total_orders'] ?? '—'}',
-                                  'Total orders'),
-                              _AdminStat(
-                                  '${overview['in_plan'] ?? '—'}', 'In plan'),
-                              _AdminStat(
-                                  '${overview['in_manufacturing'] ?? '—'}',
-                                  'In manufacturing'),
-                              _AdminStat(
-                                  '${overview['in_qc'] ?? '—'}', 'In QC'),
-                              _AdminStat('${overview['completed'] ?? '—'}',
-                                  'Completed'),
-                              _AdminStat('${overview['cancelled'] ?? '—'}',
-                                  'Cancelled'),
-                              _AdminStat('${overview['open_issues'] ?? '—'}',
-                                  'Open issues'),
-                            ])),
-                    const SizedBox(height: 20),
-                    Row(children: [
-                      Expanded(
-                          child: TextField(
-                              controller: search,
-                              decoration: InputDecoration(
-                                  prefixIcon: const Icon(Icons.search),
-                                  hintText:
-                                      'Search order ID, patient, clinic or dentist',
-                                  suffixIcon: IconButton(
-                                      tooltip: 'Search',
-                                      icon: const Icon(Icons.arrow_forward),
-                                      onPressed: () {
-                                        page = 1;
-                                        refresh();
-                                      })),
-                              onSubmitted: (_) {
-                                page = 1;
-                                refresh();
-                              })),
-                      const SizedBox(width: 12),
-                      SizedBox(
-                          width: 170,
-                          child: DropdownButtonFormField<String>(
-                              initialValue: status,
-                              isExpanded: true,
-                              decoration: const InputDecoration(),
-                              items: const [
-                                DropdownMenuItem(
-                                    value: '', child: Text('All statuses')),
-                                DropdownMenuItem(
-                                    value: 'submitted',
-                                    child: Text('Submitted')),
-                                DropdownMenuItem(
-                                    value: 'planning_in_progress',
-                                    child: Text('Planning in progress')),
-                                DropdownMenuItem(
-                                    value: 'plan_completed',
-                                    child: Text('Clinician review pending')),
-                                DropdownMenuItem(
-                                    value: 'clinician_issues',
-                                    child: Text('Clinical issues')),
-                                DropdownMenuItem(
-                                    value: 'clinician_approved',
-                                    child: Text('Clinician approved')),
-                                DropdownMenuItem(
-                                    value: 'manufactured',
-                                    child: Text('Manufactured')),
-                                DropdownMenuItem(
-                                    value: 'manufacturing_in_process',
-                                    child: Text('Manufacturing in process')),
-                                DropdownMenuItem(
-                                    value: 'qc_issues',
-                                    child: Text('QC issues')),
-                                DropdownMenuItem(
-                                    value: 'qc_approved',
-                                    child: Text('Completed')),
-                                DropdownMenuItem(
-                                    value: 'cancelled',
-                                    child: Text('Cancelled')),
-                              ],
-                              onChanged: (value) {
-                                status = value ?? '';
-                                page = 1;
-                                refresh();
-                              }))
+                            label: const Text('Create order'))
+                        : null,
+                    subtitle:
+                        'Every order across Marketing, Planning and Production, including QC work, with its full details and current status.'),
+                const SizedBox(height: 20),
+                if (isOverview) ...[
+                  const Text('Needs attention'),
+                  metricStrip(['review_pending', 'open_issues']),
+                  const Text('Order pipeline'),
+                  metricStrip(metrics.keys.where((key) =>
+                      key != 'review_pending' && key != 'open_issues')),
+                ],
+                Wrap(
+                    spacing: 12,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      if (widget.initialClinicId == null)
+                        DropdownButton<int>(
+                          value:
+                              clinics.any((clinic) => clinic['id'] == clinicId)
+                                  ? clinicId
+                                  : null,
+                          hint: const Text('All clinics'),
+                          items: [
+                            const DropdownMenuItem<int>(
+                                child: Text('All clinics')),
+                            for (final clinic in clinics)
+                              DropdownMenuItem<int>(
+                                value: clinic['id'] as int,
+                                child: Text('${clinic['clinic_name']}'),
+                              ),
+                          ],
+                          onChanged: (value) {
+                            clinicId = value;
+                            page = 1;
+                            refresh();
+                          },
+                        ),
+                      if (!isOverview)
+                        FilterChip(
+                          label: const Text('Open issues'),
+                          selected: bucket == 'open_issues',
+                          onSelected: (value) {
+                            bucket = value ? 'open_issues' : '';
+                            page = 1;
+                            refresh();
+                          },
+                        ),
+                      if (clinicError != null)
+                        TextButton(
+                            onPressed: loadClinics,
+                            child: const Text('Retry loading clinics')),
                     ]),
-                    const SizedBox(height: 16),
-                    if (error != null)
-                      Text(error!,
-                          style: const TextStyle(color: DemoStyle.danger)),
-                    Expanded(
-                        child: loading
-                            ? const Center(child: CircularProgressIndicator())
-                            : orders.isEmpty
-                                ? const Center(child: Text('No orders yet.'))
-                                : Align(
-                                    alignment: Alignment.topCenter,
-                                    child: SingleChildScrollView(
-                                        child: SingleChildScrollView(
-                                            scrollDirection: Axis.horizontal,
-                                            child: SizedBox(
-                                                width: 1190,
-                                                child: DemoPanel(
-                                                    child: Column(
-                                                        mainAxisSize:
-                                                            MainAxisSize.min,
-                                                        children: [
-                                                      Container(
-                                                          color: DemoStyle
-                                                              .surface2,
-                                                          padding:
-                                                              const EdgeInsets
-                                                                  .all(12),
-                                                          child:
-                                                              const _AdminOrderRow(
-                                                                  header:
-                                                                      true)),
-                                                      for (final order
-                                                          in orders) ...[
-                                                        const Divider(
-                                                            height: 1,
-                                                            color:
-                                                                DemoStyle.line),
-                                                        InkWell(
-                                                            onTap: () =>
-                                                                openOrder(
-                                                                    order),
-                                                            child: Padding(
-                                                                padding:
-                                                                    const EdgeInsets
-                                                                        .all(
-                                                                        12),
-                                                                child: _AdminOrderRow(
-                                                                    order:
-                                                                        order,
-                                                                    onView: () =>
-                                                                        openOrder(
-                                                                            order)))),
-                                                      ],
-                                                    ]))))))),
-                    if (total > 25)
-                      Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-                        Text('$total orders  •  page $page'),
-                        IconButton(
-                            onPressed: page > 1
-                                ? () {
-                                    page--;
+                if (!loading && error == null)
+                  Text(bucket.isEmpty
+                      ? '$total orders'
+                      : '${metrics[bucket]!.$2} · $total orders'),
+                Row(children: [
+                  Expanded(
+                      child: TextField(
+                          controller: search,
+                          decoration: InputDecoration(
+                              prefixIcon: const Icon(Icons.search),
+                              hintText:
+                                  'Search order ID, patient, clinic or dentist',
+                              suffixIcon: IconButton(
+                                  tooltip: 'Search',
+                                  icon: const Icon(Icons.arrow_forward),
+                                  onPressed: () {
+                                    page = 1;
                                     refresh();
-                                  }
-                                : null,
-                            icon: const Icon(Icons.chevron_left)),
-                        IconButton(
-                            onPressed: page * 25 < total
-                                ? () {
-                                    page++;
-                                    refresh();
-                                  }
-                                : null,
-                            icon: const Icon(Icons.chevron_right)),
-                      ]),
-                  ]))));
+                                  })),
+                          onSubmitted: (_) {
+                            page = 1;
+                            refresh();
+                          })),
+                  const SizedBox(width: 12),
+                  SizedBox(
+                      width: 170,
+                      child: DropdownButtonFormField<String>(
+                          key: ValueKey(status),
+                          initialValue: status,
+                          isExpanded: true,
+                          decoration: const InputDecoration(),
+                          items: const [
+                            DropdownMenuItem(
+                                value: '', child: Text('All statuses')),
+                            DropdownMenuItem(
+                                value: 'scanner_review',
+                                child: Text('Scanner review')),
+                            DropdownMenuItem(
+                                value: 'scanner_missing',
+                                child: Text('Scanner missing items')),
+                            DropdownMenuItem(
+                                value: 'planner_document_review',
+                                child: Text('Document review')),
+                            DropdownMenuItem(
+                                value: 'submitted', child: Text('Submitted')),
+                            DropdownMenuItem(
+                                value: 'planning_in_progress',
+                                child: Text('Planning in progress')),
+                            DropdownMenuItem(
+                                value: 'plan_completed',
+                                child: Text('Clinician review pending')),
+                            DropdownMenuItem(
+                                value: 'clinician_issues',
+                                child: Text('Clinical issues')),
+                            DropdownMenuItem(
+                                value: 'clinician_approved',
+                                child: Text('Clinician approved')),
+                            DropdownMenuItem(
+                                value: 'manufactured',
+                                child: Text('Manufactured')),
+                            DropdownMenuItem(
+                                value: 'manufacturing_in_process',
+                                child: Text('Manufacturing in process')),
+                            DropdownMenuItem(
+                                value: 'qc_issues', child: Text('QC issues')),
+                            DropdownMenuItem(
+                                value: 'qc_approved', child: Text('Completed')),
+                            DropdownMenuItem(
+                                value: 'cancelled', child: Text('Cancelled')),
+                          ],
+                          onChanged: (value) {
+                            status = value ?? '';
+                            page = 1;
+                            refresh();
+                          }))
+                ]),
+                const SizedBox(height: 16),
+                if (error != null)
+                  Text(error!, style: const TextStyle(color: DemoStyle.danger)),
+                if (loading || error == null)
+                  loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : orders.isEmpty
+                          ? const Center(child: Text('No orders yet.'))
+                          : Align(
+                              alignment: Alignment.topCenter,
+                              child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: SizedBox(
+                                      width: 1190,
+                                      child: DemoPanel(
+                                          child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                            Container(
+                                                color: DemoStyle.surface2,
+                                                padding:
+                                                    const EdgeInsets.all(12),
+                                                child: const _AdminOrderRow(
+                                                    header: true)),
+                                            for (final order in orders) ...[
+                                              const Divider(
+                                                  height: 1,
+                                                  color: DemoStyle.line),
+                                              InkWell(
+                                                onTap: () => openOrder(order),
+                                                child: Padding(
+                                                  padding:
+                                                      const EdgeInsets.all(12),
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      if (bucket ==
+                                                              'review_pending' ||
+                                                          bucket ==
+                                                              'open_issues')
+                                                        Text(
+                                                            queueDetail(order)),
+                                                      _AdminOrderRow(
+                                                        order: order,
+                                                        onView: () =>
+                                                            openOrder(order),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ]))))),
+                if (total > 25)
+                  Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                    Text('$total orders  •  page $page'),
+                    IconButton(
+                        onPressed: page > 1
+                            ? () {
+                                page--;
+                                refresh();
+                              }
+                            : null,
+                        icon: const Icon(Icons.chevron_left)),
+                    IconButton(
+                        onPressed: page * 25 < total
+                            ? () {
+                                page++;
+                                refresh();
+                              }
+                            : null,
+                        icon: const Icon(Icons.chevron_right)),
+                  ]),
+              ]))));
 }
 
 class _AdminStat extends StatelessWidget {
@@ -817,7 +987,9 @@ class _StagePill extends StatelessWidget {
 
 class AdminPerformanceView extends StatefulWidget {
   final Api api;
-  const AdminPerformanceView({super.key, required this.api});
+  final int userId;
+  const AdminPerformanceView(
+      {super.key, required this.api, required this.userId});
   @override
   State<AdminPerformanceView> createState() => _AdminPerformanceViewState();
 }
@@ -829,6 +1001,53 @@ class _AdminPerformanceViewState extends State<AdminPerformanceView> {
   int month = DateTime.now().month;
   int top = 5;
   String rankBy = 'Orders';
+  int? selectedMarketer;
+  int? selectedClinic;
+  String? detailTitle;
+  String? detailPeriod;
+
+  String get displayedPeriod =>
+      "${data!['year']}-${data!['month'].toString().padLeft(2, '0')}";
+
+  Future<void> showClinics(Map row) async {
+    final result = widget.api.request('GET',
+        "/api/performance/clinics?marketer_id=${row['id']}&period=$displayedPeriod");
+    final clinic = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text("Clinics added by ${row['name']}"),
+        content: SizedBox(
+          width: 400,
+          child: FutureBuilder(
+            future: result,
+            builder: (context, snapshot) {
+              if (snapshot.hasError)
+                return const Text('Could not load clinics.');
+              if (!snapshot.hasData) return const LinearProgressIndicator();
+              final clinics = (snapshot.data!['clinics'] as List)
+                  .cast<Map<String, dynamic>>();
+              if (clinics.isEmpty)
+                return const Text('No clinics added this month.');
+              return ListView(shrinkWrap: true, children: [
+                for (final clinic in clinics)
+                  ListTile(
+                    title: Text('${clinic['clinic_name']}'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.pop(context, clinic),
+                  ),
+              ]);
+            },
+          ),
+        ),
+      ),
+    );
+    if (!mounted || clinic == null) return;
+    setState(() {
+      selectedClinic = clinic['id'] as int;
+      detailTitle = "${clinic['clinic_name']} orders";
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -850,174 +1069,226 @@ class _AdminPerformanceViewState extends State<AdminPerformanceView> {
   }
 
   @override
-  Widget build(BuildContext context) => Center(
-      child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1180),
-          child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 28, 16, 48),
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const DemoPageHeading(
-                        title: 'Marketing team performance',
-                        subtitle:
-                            'Orders submitted and clinics added by each Marketing team member.'),
-                    const SizedBox(height: 20),
-                    Wrap(spacing: 12, children: [
-                      SizedBox(
-                          width: 120,
-                          child: DropdownButtonFormField<int>(
-                              initialValue: year,
-                              decoration:
-                                  const InputDecoration(labelText: 'Year'),
-                              items: List.generate(
-                                      6, (i) => DateTime.now().year - i)
-                                  .map((y) => DropdownMenuItem(
-                                      value: y, child: Text('$y')))
-                                  .toList(),
-                              onChanged: (v) {
-                                if (v != null) {
-                                  year = v;
-                                  refresh();
-                                }
-                              })),
-                      SizedBox(
-                          width: 140,
-                          child: DropdownButtonFormField<int>(
-                              initialValue: month,
-                              decoration:
-                                  const InputDecoration(labelText: 'Month'),
-                              items: List.generate(12, (i) => i + 1)
-                                  .map((m) => DropdownMenuItem(
-                                      value: m, child: Text('$m')))
-                                  .toList(),
-                              onChanged: (v) {
-                                if (v != null) {
-                                  month = v;
-                                  refresh();
-                                }
-                              })),
-                      SizedBox(
-                          width: 120,
-                          child: DropdownButtonFormField<int>(
-                              initialValue: top,
-                              decoration:
-                                  const InputDecoration(labelText: 'Show'),
-                              items: const [3, 5, 10, 1000]
-                                  .map((n) => DropdownMenuItem(
-                                      value: n,
-                                      child: Text(
-                                          n == 1000 ? 'Everyone' : 'Top $n')))
-                                  .toList(),
-                              onChanged: (v) {
-                                if (v != null) setState(() => top = v);
-                              })),
-                      SizedBox(
-                          width: 160,
-                          child: DropdownButtonFormField<String>(
-                              initialValue: rankBy,
-                              decoration:
-                                  const InputDecoration(labelText: 'Rank by'),
-                              items: const ['Orders', 'Clinics']
-                                  .map((s) => DropdownMenuItem(
-                                      value: s, child: Text(s)))
-                                  .toList(),
-                              onChanged: (v) {
-                                if (v != null) setState(() => rankBy = v);
-                              })),
-                    ]),
-                    const SizedBox(height: 20),
-                    if (error != null)
-                      Text(error!,
-                          style: const TextStyle(color: DemoStyle.danger)),
-                    Expanded(
-                        child: data == null
-                            ? const Center(child: CircularProgressIndicator())
-                            : ListView(children: [
-                                Wrap(spacing: 12, runSpacing: 12, children: [
-                                  _stat(
-                                      'Orders submitted', '${data!['orders']}'),
-                                  _stat('Clinics added', '${data!['clinics']}'),
-                                  _stat('Cancelled orders',
-                                      '${data!['cancelled']}'),
-                                ]),
-                                const SizedBox(height: 20),
-                                DemoPanel(
-                                    child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.stretch,
+  Widget build(BuildContext context) => detailTitle != null
+      ? Column(children: [
+          ListTile(
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              tooltip: 'Back to performance',
+              onPressed: () => setState(() {
+                detailTitle = null;
+                selectedMarketer = null;
+                selectedClinic = null;
+                detailPeriod = null;
+              }),
+            ),
+            title: Text(detailTitle!),
+          ),
+          Expanded(
+              child: AdminOrdersView(
+            api: widget.api,
+            userId: widget.userId,
+            marketerId: selectedMarketer,
+            period: detailPeriod,
+            initialClinicId: selectedClinic,
+          )),
+        ])
+      : Center(
+          child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1180),
+              child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 28, 16, 48),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const DemoPageHeading(
+                            title: 'Marketing team performance',
+                            subtitle:
+                                'Orders submitted and clinics added by each Marketing team member.'),
+                        const SizedBox(height: 20),
+                        Wrap(spacing: 12, children: [
+                          SizedBox(
+                              width: 120,
+                              child: DropdownButtonFormField<int>(
+                                  initialValue: year,
+                                  decoration:
+                                      const InputDecoration(labelText: 'Year'),
+                                  items: List.generate(
+                                          6, (i) => DateTime.now().year - i)
+                                      .map((y) => DropdownMenuItem(
+                                          value: y, child: Text('$y')))
+                                      .toList(),
+                                  onChanged: (v) {
+                                    if (v != null) {
+                                      year = v;
+                                      refresh();
+                                    }
+                                  })),
+                          SizedBox(
+                              width: 140,
+                              child: DropdownButtonFormField<int>(
+                                  initialValue: month,
+                                  decoration:
+                                      const InputDecoration(labelText: 'Month'),
+                                  items: List.generate(12, (i) => i + 1)
+                                      .map((m) => DropdownMenuItem(
+                                          value: m, child: Text('$m')))
+                                      .toList(),
+                                  onChanged: (v) {
+                                    if (v != null) {
+                                      month = v;
+                                      refresh();
+                                    }
+                                  })),
+                          SizedBox(
+                              width: 120,
+                              child: DropdownButtonFormField<int>(
+                                  initialValue: top,
+                                  decoration:
+                                      const InputDecoration(labelText: 'Show'),
+                                  items: const [3, 5, 10, 1000]
+                                      .map((n) => DropdownMenuItem(
+                                          value: n,
+                                          child: Text(n == 1000
+                                              ? 'Everyone'
+                                              : 'Top $n')))
+                                      .toList(),
+                                  onChanged: (v) {
+                                    if (v != null) setState(() => top = v);
+                                  })),
+                          SizedBox(
+                              width: 160,
+                              child: DropdownButtonFormField<String>(
+                                  initialValue: rankBy,
+                                  decoration: const InputDecoration(
+                                      labelText: 'Rank by'),
+                                  items: const ['Orders', 'Clinics']
+                                      .map((s) => DropdownMenuItem(
+                                          value: s, child: Text(s)))
+                                      .toList(),
+                                  onChanged: (v) {
+                                    if (v != null) setState(() => rankBy = v);
+                                  })),
+                        ]),
+                        const SizedBox(height: 20),
+                        if (error != null)
+                          Text(error!,
+                              style: const TextStyle(color: DemoStyle.danger)),
+                        Expanded(
+                            child: data == null
+                                ? const Center(
+                                    child: CircularProgressIndicator())
+                                : ListView(children: [
+                                    Wrap(
+                                        spacing: 12,
+                                        runSpacing: 12,
                                         children: [
-                                      const Padding(
-                                          padding: EdgeInsets.all(16),
-                                          child: Text('Top performers',
-                                              style: TextStyle(
-                                                  fontFamily: 'Bricolage',
-                                                  fontWeight: FontWeight.w700,
-                                                  fontSize: 16))),
-                                      const Divider(height: 1),
-                                      for (final row in _ranking())
-                                        ListTile(
-                                            title: Text(
-                                                row['name']?.toString() ?? ''),
-                                            subtitle: Text(
-                                                'Clinics added: ${row['clinics']}'),
-                                            trailing: Text(
-                                                '${row['orders']} orders',
-                                                style: const TextStyle(
-                                                    fontWeight:
-                                                        FontWeight.w700))),
-                                    ])),
-                                const SizedBox(height: 20),
-                                DemoPanel(
-                                    child: Padding(
-                                        padding: const EdgeInsets.all(16),
+                                          _stat('Orders submitted',
+                                              '${data!['orders']}'),
+                                          _stat('Clinics added',
+                                              '${data!['clinics']}'),
+                                          _stat('Cancelled orders',
+                                              '${data!['cancelled']}'),
+                                        ]),
+                                    const SizedBox(height: 20),
+                                    DemoPanel(
                                         child: Column(
                                             crossAxisAlignment:
                                                 CrossAxisAlignment.stretch,
                                             children: [
-                                              const Text('Month-wise dashboard',
+                                          const Padding(
+                                              padding: EdgeInsets.all(16),
+                                              child: Text('Top performers',
                                                   style: TextStyle(
                                                       fontFamily: 'Bricolage',
                                                       fontWeight:
                                                           FontWeight.w700,
-                                                      fontSize: 16)),
-                                              const SizedBox(height: 20),
-                                              for (final row
-                                                  in (data!['months'] as List))
-                                                Padding(
-                                                    padding:
-                                                        const EdgeInsets.only(
-                                                            bottom: 8),
-                                                    child: Row(children: [
-                                                      SizedBox(
-                                                          width: 30,
-                                                          child: Text(
-                                                              '${row['month']}')),
-                                                      Expanded(
-                                                          child: LinearProgressIndicator(
-                                                              value: (row['orders']
-                                                                          as num)
-                                                                      .toDouble() /
-                                                                  _maxMonth(),
-                                                              minHeight: 12,
-                                                              borderRadius:
-                                                                  BorderRadius
-                                                                      .circular(
-                                                                          3),
-                                                              backgroundColor:
-                                                                  DemoStyle
-                                                                      .surface2,
-                                                              color: DemoStyle
-                                                                  .accent)),
-                                                      const SizedBox(width: 10),
-                                                      SizedBox(
-                                                          width: 35,
-                                                          child: Text(
-                                                              '${row['orders']}')),
-                                                    ])),
-                                            ]))),
-                              ])),
-                  ]))));
+                                                      fontSize: 16))),
+                                          const Divider(height: 1),
+                                          for (final row in _ranking())
+                                            ListTile(
+                                                title: Text(
+                                                    row['name']?.toString() ??
+                                                        ''),
+                                                subtitle: Align(
+                                                  alignment:
+                                                      Alignment.centerLeft,
+                                                  child: TextButton(
+                                                    onPressed: () =>
+                                                        showClinics(row),
+                                                    child: Text(
+                                                        "${row['clinics']} clinics added"),
+                                                  ),
+                                                ),
+                                                trailing: TextButton(
+                                                  onPressed: () => setState(() {
+                                                    selectedMarketer =
+                                                        row['id'] as int;
+                                                    detailPeriod =
+                                                        displayedPeriod;
+                                                    detailTitle =
+                                                        "${row['name']} · $detailPeriod";
+                                                  }),
+                                                  child: Text(
+                                                      "${row['orders']} orders"),
+                                                )),
+                                        ])),
+                                    const SizedBox(height: 20),
+                                    DemoPanel(
+                                        child: Padding(
+                                            padding: const EdgeInsets.all(16),
+                                            child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.stretch,
+                                                children: [
+                                                  const Text(
+                                                      'Month-wise dashboard',
+                                                      style: TextStyle(
+                                                          fontFamily:
+                                                              'Bricolage',
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                          fontSize: 16)),
+                                                  const SizedBox(height: 20),
+                                                  for (final row
+                                                      in (data!['months']
+                                                          as List))
+                                                    Padding(
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .only(
+                                                                bottom: 8),
+                                                        child: Row(children: [
+                                                          SizedBox(
+                                                              width: 30,
+                                                              child: Text(
+                                                                  '${row['month']}')),
+                                                          Expanded(
+                                                              child: LinearProgressIndicator(
+                                                                  value: (row['orders']
+                                                                              as num)
+                                                                          .toDouble() /
+                                                                      _maxMonth(),
+                                                                  minHeight: 12,
+                                                                  borderRadius:
+                                                                      BorderRadius
+                                                                          .circular(
+                                                                              3),
+                                                                  backgroundColor:
+                                                                      DemoStyle
+                                                                          .surface2,
+                                                                  color: DemoStyle
+                                                                      .accent)),
+                                                          const SizedBox(
+                                                              width: 10),
+                                                          SizedBox(
+                                                              width: 35,
+                                                              child: Text(
+                                                                  '${row['orders']}')),
+                                                        ])),
+                                                ]))),
+                                  ])),
+                      ]))));
 
   List<dynamic> _ranking() {
     final rows = List<dynamic>.from(data!['ranking'] as List);
