@@ -673,10 +673,7 @@ class _AdminOrderRow extends StatelessWidget {
       cell('PATIENT', '${data['patient_name'] ?? ''}', 14,
           sub: age == null ? null : '$age yrs', bold: true),
       cell('CLINIC', '${clinic['name'] ?? ''}', 14,
-          sub: (clinic['clinicians'] as List?)
-                  ?.map((person) => person['name'])
-                  .join(', ') ??
-              clinic['dentist']?.toString()),
+          sub: header ? null : assignedClinicianName(data)),
       _stage('CURRENT STATUS', header ? '' : _currentStatusLabel(status), 17,
           tone: _statusTone(status)),
       _stage('PLAN', header ? '' : _planLabel(data), 11, tone: _planTone(data)),

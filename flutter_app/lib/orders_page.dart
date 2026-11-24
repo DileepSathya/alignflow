@@ -27,6 +27,18 @@ const _statuses = <String, String>{
 String orderStatusLabel(Object? status) =>
     _statuses[status] ?? status?.toString() ?? '';
 
+String assignedClinicianName(Map order) {
+  final clinicianId = order['clinician_id'];
+  final clinicians = (order['clinic'] as Map?)?['clinicians'] as List?;
+  if (clinicianId == null || clinicians == null) return '—';
+  for (final clinician in clinicians) {
+    if (clinician is Map && clinician['clinician_id'] == clinicianId) {
+      return clinician['name']?.toString() ?? '—';
+    }
+  }
+  return '—';
+}
+
 const _progressSteps = <(String, String)>[
   ('scanner_review', 'Preparing documents'),
   ('planner_document_review', 'Planner document review'),
@@ -265,11 +277,25 @@ class _OrdersPageState extends State<OrdersPage> {
                                                                           .w700))),
                                                       Expanded(
                                                           flex: 3,
-                                                          child: Text(
-                                                              '${(order['clinic'] as Map)['name']}',
-                                                              style: const TextStyle(
-                                                                  color: DemoStyle
-                                                                      .muted))),
+                                                          child: Column(
+                                                              crossAxisAlignment:
+                                                                  CrossAxisAlignment
+                                                                      .start,
+                                                              children: [
+                                                                Text(
+                                                                    '${(order['clinic'] as Map)['name']}',
+                                                                    style: const TextStyle(
+                                                                        color: DemoStyle
+                                                                            .muted)),
+                                                                Text(
+                                                                    assignedClinicianName(
+                                                                        order),
+                                                                    style: const TextStyle(
+                                                                        fontSize:
+                                                                            11,
+                                                                        color: DemoStyle
+                                                                            .muted)),
+                                                              ])),
                                                       Expanded(
                                                           flex: 3,
                                                           child: Align(
@@ -313,7 +339,7 @@ class _OrdersPageState extends State<OrdersPage> {
                                                     fontWeight:
                                                         FontWeight.w600)),
                                             subtitle: Text(
-                                                '${(order['clinic'] as Map)['name']}'),
+                                                '${(order['clinic'] as Map)['name']}\n${assignedClinicianName(order)}'),
                                             trailing: _OrderStatus(
                                                 status: '${order['status']}'));
                                       }))))),
@@ -1015,8 +1041,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('Name: ${(data['clinic'] as Map)['name']}'),
-                          Text(
-                              'Clinicians: ${((data['clinic'] as Map)['clinicians'] as List?)?.map((person) => person['name']).join(', ') ?? (data['clinic'] as Map)['dentist'] ?? '—'}'),
+                          Text('Clinician: ${assignedClinicianName(data)}'),
                           Text(
                               'Contact: ${(data['clinic'] as Map)['contact']}'),
                           Text(

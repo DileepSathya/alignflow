@@ -426,10 +426,7 @@ class _CadRow extends StatelessWidget {
       cell('ORDER', '${data['order_id'] ?? ''}', 13, mono: true),
       cell('PATIENT', '${data['patient_name'] ?? ''}', 14, bold: true),
       cell('CLINIC', '${clinic['name'] ?? ''}', 17,
-          sub: (clinic['clinicians'] as List?)
-                  ?.map((person) => person['name'])
-                  .join(', ') ??
-              clinic['dentist']?.toString()),
+          sub: header ? null : assignedClinicianName(data)),
       cell('CASE', '', 9),
       cell('UPLOADED', uploaded, 10),
       cell('ASSIGNEE',
