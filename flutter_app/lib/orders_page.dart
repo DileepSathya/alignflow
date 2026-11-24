@@ -731,16 +731,14 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
   void initState() {
     super.initState();
     refresh();
-    if (widget.role == 'admin') loadPlanners();
+    if (widget.role == 'admin' || widget.role == 'planning') loadPlanners();
   }
 
   Future<void> loadPlanners() async {
     try {
-      final result = await widget.api.request('GET', '/api/users');
+      final result = await widget.api.request('GET', '/api/planners');
       if (mounted)
-        setState(() => planners = (result['users'] as List<dynamic>)
-            .where((user) => user['role'] == 'planning')
-            .toList());
+        setState(() => planners = result['users'] as List<dynamic>);
     } catch (e) {
       if (mounted) setState(() => error = e.toString());
     }
@@ -781,6 +779,42 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
     } finally {
       if (mounted) setState(() => busy = false);
     }
+  }
+
+  Future<void> changeAssignment(int? userId, {bool requireReason = false}) async {
+    String? reason;
+    if (requireReason) {
+      final controller = TextEditingController();
+      reason = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Reason for assignment change'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLines: 3,
+            decoration: const InputDecoration(hintText: 'Enter a reason'),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () {
+                if (controller.text.trim().isNotEmpty) {
+                  Navigator.pop(context, controller.text.trim());
+                }
+              },
+              child: const Text('Confirm'),
+            ),
+          ],
+        ),
+      );
+      controller.dispose();
+      if (reason == null) return;
+    }
+    await action('POST', '/api/orders/${widget.orderId}/assignment', {
+      'user_id': userId,
+      if (reason != null) 'reason': reason,
+    });
   }
 
   Future<void> addFiles() async {
@@ -1369,18 +1403,53 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                           child: Text('Assign to planner')),
                     ),
                   ]),
-                if (['planning', 'admin'].contains(widget.role) &&
-                    !widget.qcMode &&
-                    data['status'] == 'planning_in_progress' &&
-                    (data['assigned_planner'] as Map?)?['id'] == widget.userId)
-                  FilledButton(
-                      onPressed: busy
-                          ? null
-                          : () => action(
-                              'POST',
-                              '/api/orders/${widget.orderId}/status',
-                              {'status': 'plan_completed'}),
-                      child: const Text('Plan completed')),
+                if (data['assigned_planner'] != null &&
+                    (widget.role == 'admin' ||
+                        (widget.role == 'planning' && !widget.qcMode &&
+                            data['status'] == 'planning_in_progress' &&
+                            (data['assigned_planner'] as Map?)?['id'] == widget.userId)))
+                  Wrap(spacing: 8, runSpacing: 8, children: [
+                    if (data['status'] == 'planning_in_progress' &&
+                        (data['assigned_planner'] as Map?)?['id'] == widget.userId &&
+                        (widget.role == 'admin' ||
+                            (data['assigned_by'] as Map?)?['id'] == null ||
+                            (data['assigned_by'] as Map?)?['id'] == widget.userId))
+                      OutlinedButton(
+                        onPressed: busy ? null : () => changeAssignment(null,
+                            requireReason: widget.role == 'planning'),
+                        child: const Text('Drop order'),
+                      ),
+                    if (widget.role == 'admin' ||
+                        (data['assigned_by'] as Map?)?['id'] == null ||
+                        (data['assigned_by'] as Map?)?['id'] == widget.userId)
+                      PopupMenuButton<int>(
+                        enabled: !busy && planners.isNotEmpty,
+                        tooltip: 'Change assignee',
+                        onSelected: (id) => changeAssignment(id,
+                            requireReason: widget.role == 'planning'),
+                        itemBuilder: (_) => [
+                          if (widget.role == 'admin' && widget.userId != null &&
+                              widget.userId != (data['assigned_planner'] as Map?)?['id'])
+                            PopupMenuItem<int>(
+                                value: widget.userId!, child: const Text('Assign to me')),
+                          for (final planner in planners)
+                            if (planner['id'] != (data['assigned_planner'] as Map?)?['id'])
+                              PopupMenuItem<int>(
+                                  value: planner['id'] as int,
+                                  child: Text(planner['name'].toString())),
+                        ],
+                        child: const Chip(label: Text('Change assignee')),
+                      ),
+                    if (!widget.qcMode && data['status'] == 'planning_in_progress' &&
+                        (data['assigned_planner'] as Map?)?['id'] == widget.userId)
+                      FilledButton(
+                          onPressed: busy
+                              ? null
+                              : () => action('POST',
+                                  '/api/orders/${widget.orderId}/status',
+                                  {'status': 'plan_completed'}),
+                          child: const Text('Plan completed')),
+                  ]),
                 if (['marketing', 'clinic_admin', 'clinician']
                         .contains(widget.role) &&
                     data['status'] == 'plan_completed')

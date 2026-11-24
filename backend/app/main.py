@@ -401,6 +401,15 @@ def list_users(admin=Depends(admin_user), conn=Depends(connection)):
         return {"users": cur.fetchall()}
 
 
+@app.get("/api/planners")
+def list_planners(user=Depends(current_user), conn=Depends(connection)):
+    if user["role"] not in {"planning", "admin"}:
+        raise HTTPException(status_code=403, detail="Planning team or admin only")
+    with conn.cursor() as cur:
+        cur.execute("SELECT id, name, role FROM users WHERE role = 'planning' ORDER BY name, id")
+        return {"users": cur.fetchall()}
+
+
 @app.get("/api/teams")
 def list_teams(admin=Depends(admin_user)):
     return {"teams": TEAMS}
@@ -1567,7 +1576,7 @@ def assign_order(order_id: str, user=Depends(current_user)):
     timestamp = now()
     updated = order_store().find_one_and_update(
         {"order_id": order_id, "status": "submitted", "assigned_planner": None, "scanner_approved": True},
-        audited_update({"$set": {"status": "planning_in_progress", "assigned_planner": {"id": user["id"], "name": user["name"]}, "assigned_at": timestamp},
+        audited_update({"$set": {"status": "planning_in_progress", "assigned_planner": {"id": user["id"], "name": user["name"]}, "assigned_at": timestamp, "assigned_by": {"id": user["id"], "name": user["name"]}},
          "$push": {"history": {"status": "planning_in_progress", "at": timestamp, "by": user["name"]}}},
          "Planner assigned", user, timestamp, assignee=user["name"],
          from_status="submitted", to_status="planning_in_progress"),
@@ -1579,6 +1588,60 @@ def assign_order(order_id: str, user=Depends(current_user)):
 
 class AdminAssignment(BaseModel):
     user_id: int
+
+
+class AssignmentChange(BaseModel):
+    user_id: int | None = None
+    reason: str | None = None
+
+
+@app.post("/api/orders/{order_id}/assignment")
+def change_assignment(order_id: str, body: AssignmentChange, user=Depends(current_user), conn=Depends(connection)):
+    if user["role"] not in {"planning", "admin"}:
+        raise HTTPException(status_code=403, detail="Planning team or admin only")
+    doc = get_order(order_id, user)
+    previous = doc.get("assigned_planner")
+    if not previous:
+        raise HTTPException(status_code=409, detail="Order is unassigned")
+    if user["role"] == "planning":
+        if doc["status"] != "planning_in_progress" or previous.get("id") != user["id"]:
+            raise HTTPException(status_code=403, detail="Only the assigned planner can change this assignment")
+        assigned_by = doc.get("assigned_by")
+        if assigned_by and assigned_by.get("id") != user["id"]:
+            raise HTTPException(status_code=403, detail="Only self-claimed orders can be changed")
+        if not body.reason or not body.reason.strip():
+            raise HTTPException(status_code=400, detail="A reason is required")
+    elif body.user_id is None and (previous.get("id") != user["id"] or doc["status"] != "planning_in_progress"):
+        raise HTTPException(status_code=403, detail="Admin can drop only an order assigned to themselves")
+    assignee = None
+    if body.user_id is not None:
+        if body.user_id == user["id"]:
+            assignee = user
+        else:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, name, role FROM users WHERE id = %s", (body.user_id,))
+                assignee = cur.fetchone()
+        if not assignee or assignee["role"] != "planning" and not (assignee["role"] == "admin" and assignee["id"] == user["id"]):
+            raise HTTPException(status_code=400, detail="Select a planning team member")
+        if assignee["id"] == previous.get("id"):
+            raise HTTPException(status_code=409, detail="Assignee is unchanged")
+    timestamp = now()
+    fields = {"assigned_planner": {"id": assignee["id"], "name": assignee["name"]} if assignee else None,
+              "assigned_at": timestamp if assignee else None,
+              "assigned_by": {"id": user["id"], "name": user["name"]} if assignee else None}
+    if not assignee and doc["status"] == "planning_in_progress":
+        fields["status"] = "submitted"
+    updated = order_store().find_one_and_update(
+        {"order_id": order_id, "status": doc["status"], "assigned_planner.id": previous["id"],
+         "assigned_at": doc.get("assigned_at")},
+        audited_update({"$set": fields, "$push": {"history": {
+            "status": fields.get("status", doc["status"]), "at": timestamp, "by": user["name"]}}},
+            "Assignment changed", user, timestamp, previous_assignee=previous["name"],
+            assignee=assignee["name"] if assignee else None, reason=body.reason),
+        return_document=ReturnDocument.AFTER)
+    if updated is None:
+        raise HTTPException(status_code=409, detail="Order changed; reload and try again")
+    return {"order": public_order(updated)}
 
 
 @app.post("/api/admin/orders/{order_id}/assign")
