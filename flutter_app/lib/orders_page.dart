@@ -719,6 +719,14 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
   String? error;
   final comment = TextEditingController();
   bool busy = false;
+  final Set<String> collapsedSections = {
+    'patient',
+    'clinic',
+    'required_items',
+    'documents',
+    'comments',
+    'issues',
+  };
   @override
   void initState() {
     super.initState();
@@ -919,16 +927,35 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
     notes.dispose();
   }
 
-  Widget panel(String title, Widget child) => Card(
+  Widget panel(String title, Widget child, {String? section}) => Card(
       child: Padding(
           padding: const EdgeInsets.all(16),
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title,
-                style:
-                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const Divider(),
-            child
+            if (section == null)
+              Text(title,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 16))
+            else
+              InkWell(
+                  onTap: () => setState(() {
+                        if (!collapsedSections.add(section)) {
+                          collapsedSections.remove(section);
+                        }
+                      }),
+                  child: Row(children: [
+                    Expanded(
+                        child: Text(title,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 16))),
+                    Icon(collapsedSections.contains(section)
+                        ? Icons.keyboard_arrow_down
+                        : Icons.keyboard_arrow_up),
+                  ])),
+            if (section == null || !collapsedSections.contains(section)) ...[
+              const Divider(),
+              child,
+            ]
           ])));
   @override
   Widget build(BuildContext context) {
@@ -1034,7 +1061,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                 onPressed: busy ? null : editPatient,
                                 icon: const Icon(Icons.edit),
                                 label: const Text('Edit patient')),
-                        ])),
+                        ]), section: 'patient'),
                 panel(
                     'Clinic (view only)',
                     Column(
@@ -1047,13 +1074,16 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                           Text(
                               'Email: ${(data['clinic'] as Map)['email'] ?? '—'}'),
                           Text('Area: ${(data['clinic'] as Map)['area']}'),
-                        ])),
+                        ]), section: 'clinic'),
                 if (data['checklist'] != null)
-                  ScannerChecklist(
-                      api: widget.api,
-                      order: data,
-                      role: widget.role,
-                      onChanged: refresh),
+                  panel(
+                      'Required items',
+                      ScannerChecklist(
+                          api: widget.api,
+                          order: data,
+                          role: widget.role,
+                          onChanged: refresh),
+                      section: 'required_items'),
                 panel(
                     'Documents (${(data['documents'] as List).length})',
                     Column(
@@ -1098,7 +1128,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                 onPressed: busy ? null : addFiles,
                                 icon: const Icon(Icons.upload_file),
                                 label: const Text('Add documents')),
-                        ])),
+                        ]), section: 'documents'),
                 panel(
                     'Comments (${(data['comments'] as List).length})',
                     Column(
@@ -1131,7 +1161,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                             comment.clear();
                                           },
                                     child: const Text('Post comment'))),
-                        ])),
+                        ]), section: 'comments'),
                 panel(
                     'Issues (${(data['issues'] as List).length})',
                     Column(
@@ -1176,7 +1206,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                 child: FilledButton(
                                     onPressed: busy ? null : raiseIssue,
                                     child: const Text('Raise issue'))),
-                        ])),
+                        ]), section: 'issues'),
                 if (['marketing', 'clinic_admin', 'clinician']
                         .contains(widget.role) &&
                     [
