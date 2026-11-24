@@ -2,7 +2,7 @@ import 'role_shell.dart';
 import 'package:flutter/material.dart';
 import 'api.dart';
 import 'demo_style.dart';
-import 'orders_page.dart';
+import 'app_router.dart';
 
 const _labTabs = <(String, String)>[
   ('', 'All orders'),
@@ -88,13 +88,7 @@ class _LabOrdersPageState extends State<LabOrdersPage> {
   }
 
   Future<void> openOrder(Map<String, dynamic> order) async {
-    await Navigator.push(
-        context,
-        MaterialPageRoute(
-            builder: (_) => OrderDetailPage(
-                api: widget.api,
-                orderId: order['order_id'] as String,
-                role: 'production')));
+    await AppRouter.of(context).openOrder(order['order_id'] as String);
     refreshOverview();
     refresh();
   }

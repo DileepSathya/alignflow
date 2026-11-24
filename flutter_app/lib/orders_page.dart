@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'api.dart';
 import 'demo_style.dart';
+import 'app_router.dart';
 
 const _statuses = <String, String>{
   'scanner_review': 'Preparing documents',
@@ -121,11 +122,7 @@ class _OrdersPageState extends State<OrdersPage> {
   }
 
   Future<void> openOrder(Map<String, dynamic> order) async {
-    await Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => OrderDetailPage(
-            api: widget.api,
-            orderId: order['order_id'] as String,
-            role: widget.user['role'] as String)));
+    await AppRouter.of(context).openOrder(order['order_id'] as String);
     refresh();
   }
 
@@ -144,7 +141,8 @@ class _OrdersPageState extends State<OrdersPage> {
                 title: 'Orders',
                 subtitle:
                     'Track every patient case from submission to delivery.'),
-            if (['marketing', 'clinic_admin', 'clinician'].contains(widget.user['role']))
+            if (['marketing', 'clinic_admin', 'clinician']
+                .contains(widget.user['role']))
               FilledButton.icon(
                   onPressed: create,
                   icon: const Icon(Icons.upload_outlined),
@@ -455,29 +453,34 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
       error = null;
     });
     try {
-      final result = createdOrderId == null ? await widget.api.request('POST', '/api/orders', {
-        'request_id': requestId,
-        'patient_name': name.text.trim(),
-        'patient_mobile_number': mobile.text.trim(),
-        'patient_email': email.text.trim().isEmpty ? null : email.text.trim(),
-        'clinic_patient_id': clinicPatientId.text.trim().isEmpty
-            ? null
-            : clinicPatientId.text.trim(),
-        'clinician_id': clinicianId,
-        'age': parsedAge,
-        'clinic_id': clinicId,
-        'notes': notes.text.trim(),
-      }) : null;
+      final result = createdOrderId == null
+          ? await widget.api.request('POST', '/api/orders', {
+              'request_id': requestId,
+              'patient_name': name.text.trim(),
+              'patient_mobile_number': mobile.text.trim(),
+              'patient_email':
+                  email.text.trim().isEmpty ? null : email.text.trim(),
+              'clinic_patient_id': clinicPatientId.text.trim().isEmpty
+                  ? null
+                  : clinicPatientId.text.trim(),
+              'clinician_id': clinicianId,
+              'age': parsedAge,
+              'clinic_id': clinicId,
+              'notes': notes.text.trim(),
+            })
+          : null;
       createdOrderId ??= (result!['order'] as Map)['order_id'] as String;
       while (uploadedCount < attachments.length) {
-        await widget.api.uploadOrderFile(createdOrderId!, attachments[uploadedCount]);
+        await widget.api
+            .uploadOrderFile(createdOrderId!, attachments[uploadedCount]);
         uploadedCount++;
       }
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
-      if (mounted) setState(() => error = createdOrderId == null
-          ? e.toString()
-          : 'Order $createdOrderId was created. ${attachments.length - uploadedCount} file(s) still need uploading. Retry to continue. $e');
+      if (mounted)
+        setState(() => error = createdOrderId == null
+            ? e.toString()
+            : 'Order $createdOrderId was created. ${attachments.length - uploadedCount} file(s) still need uploading. Retry to continue. $e');
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -700,8 +703,10 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
   Future<void> loadPlanners() async {
     try {
       final result = await widget.api.request('GET', '/api/users');
-      if (mounted) setState(() => planners =
-          (result['users'] as List<dynamic>).where((user) => user['role'] == 'planning').toList());
+      if (mounted)
+        setState(() => planners = (result['users'] as List<dynamic>)
+            .where((user) => user['role'] == 'planning')
+            .toList());
     } catch (e) {
       if (mounted) setState(() => error = e.toString());
     }
@@ -1035,7 +1040,8 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                 subtitle: Text(
                                     'Uploaded by ${document['by']} (${document['role']})'),
                                 onTap: () => downloadFile(document as Map),
-                                trailing: !['admin', 'clinician'].contains(widget.role) &&
+                                trailing: !['admin', 'clinician']
+                                            .contains(widget.role) &&
                                         document['role'] == widget.role &&
                                         (document['checklist_id'] == null ||
                                             document['checklist_id'] == '') &&
@@ -1061,7 +1067,8 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                                 }
                                               })
                                     : null),
-                          if (widget.role != 'admin' && data['status'] != 'cancelled')
+                          if (widget.role != 'admin' &&
+                              data['status'] != 'cancelled')
                             OutlinedButton.icon(
                                 onPressed: busy ? null : addFiles,
                                 icon: const Icon(Icons.upload_file),
@@ -1145,7 +1152,8 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                     onPressed: busy ? null : raiseIssue,
                                     child: const Text('Raise issue'))),
                         ])),
-                if (['marketing', 'clinic_admin', 'clinician'].contains(widget.role) &&
+                if (['marketing', 'clinic_admin', 'clinician']
+                        .contains(widget.role) &&
                     [
                       'scanner_review',
                       'scanner_missing',
@@ -1177,27 +1185,34 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                           : () => action('POST',
                               '/api/orders/${widget.orderId}/assign', {}),
                       child: const Text('Assign to me')),
-                if (widget.role == 'admin' && data['status'] == 'submitted' &&
+                if (widget.role == 'admin' &&
+                    data['status'] == 'submitted' &&
                     data['assigned_planner'] == null)
                   Wrap(spacing: 8, children: [
                     FilledButton(
-                      onPressed: busy || widget.userId == null ? null : () => action(
-                        'POST', '/api/admin/orders/${widget.orderId}/assign',
-                        {'user_id': widget.userId}),
-                      child: const Text('Assign to me')),
+                        onPressed: busy || widget.userId == null
+                            ? null
+                            : () => action(
+                                'POST',
+                                '/api/admin/orders/${widget.orderId}/assign',
+                                {'user_id': widget.userId}),
+                        child: const Text('Assign to me')),
                     PopupMenuButton<int>(
                       enabled: !busy && planners.isNotEmpty,
                       tooltip: 'Assign to planner',
                       onSelected: (id) => action(
-                        'POST', '/api/admin/orders/${widget.orderId}/assign',
-                        {'user_id': id}),
+                          'POST',
+                          '/api/admin/orders/${widget.orderId}/assign',
+                          {'user_id': id}),
                       itemBuilder: (_) => [
                         for (final planner in planners)
-                          PopupMenuItem<int>(value: planner['id'] as int,
-                            child: Text(planner['name'].toString())),
+                          PopupMenuItem<int>(
+                              value: planner['id'] as int,
+                              child: Text(planner['name'].toString())),
                       ],
-                      child: const Padding(padding: EdgeInsets.all(10),
-                        child: Text('Assign to planner')),
+                      child: const Padding(
+                          padding: EdgeInsets.all(10),
+                          child: Text('Assign to planner')),
                     ),
                   ]),
                 if (['planning', 'admin'].contains(widget.role) &&
@@ -1212,7 +1227,8 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                               '/api/orders/${widget.orderId}/status',
                               {'status': 'plan_completed'}),
                       child: const Text('Plan completed')),
-                if (['marketing', 'clinic_admin', 'clinician'].contains(widget.role) &&
+                if (['marketing', 'clinic_admin', 'clinician']
+                        .contains(widget.role) &&
                     data['status'] == 'plan_completed')
                   FilledButton(
                       onPressed: busy
@@ -1222,7 +1238,8 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                               '/api/orders/${widget.orderId}/status',
                               {'status': 'clinician_approved'}),
                       child: const Text('Clinician approved')),
-                if (['marketing', 'clinic_admin', 'clinician'].contains(widget.role) &&
+                if (['marketing', 'clinic_admin', 'clinician']
+                        .contains(widget.role) &&
                     data['status'] == 'clinician_issues' &&
                     (data['issues'] as List).isEmpty)
                   OutlinedButton(

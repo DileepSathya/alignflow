@@ -43,6 +43,8 @@ flutter run -d chrome --web-port 8080
 
 `0.0.0.0` lets devices on the local network reach the API. It is a listen address, not an address to enter in the app. To stop the app, close the two terminals or press Ctrl+C in each.
 
+On the web, workspace sections and order details have their own URLs (for example, `/#/admin/users` and `/#/admin/orders/order/ORDER-ID`). Browser Back and Forward navigate between them, and a copied URL opens the same view after login. Flutter's hash URL format lets these links refresh on a static host without a server rewrite rule.
+
 ## Run on an Android phone over Wi-Fi
 
 1. Start the backend on the PC using the batch file or the manual command above. The Flutter web terminal is not needed for the installed APK.

@@ -5,22 +5,25 @@ import 'admin_page.dart';
 import 'demo_style.dart';
 import 'orders_page.dart';
 import 'clinic_approvals.dart';
+import 'app_router.dart';
 
 class AdminWorkspace extends StatefulWidget {
   final Api api;
   final Map<String, dynamic> user;
   final VoidCallback onLogout;
+  final String initialSection;
   const AdminWorkspace(
       {super.key,
       required this.api,
       required this.user,
-      required this.onLogout});
+      required this.onLogout,
+      this.initialSection = 'All orders'});
   @override
   State<AdminWorkspace> createState() => _AdminWorkspaceState();
 }
 
 class _AdminWorkspaceState extends State<AdminWorkspace> {
-  String section = 'All orders';
+  late String section = widget.initialSection;
   int orderCount = 0, userCount = 0;
   final sections = const [
     'All orders',
@@ -126,10 +129,16 @@ class _AdminWorkspaceState extends State<AdminWorkspace> {
                                 ? DemoStyle.accent
                                 : Colors.transparent)),
                     onTap: () {
-                      setState(() => section = sections[i]);
                       if (compact) {
                         Navigator.pop(context);
                       }
+                      AppRouter.of(context).go(const {
+                        'All orders': '/admin/orders',
+                        'Planning': '/admin/planning',
+                        'Users': '/admin/users',
+                        'Clinics': '/admin/clinics',
+                        'Performance': '/admin/performance'
+                      }[sections[i]]!);
                     })),
           const Spacer(),
           const Divider(),
@@ -191,81 +200,122 @@ class _AdminPlanningViewState extends State<AdminPlanningView> {
   }
 
   Future<void> refresh() async {
-    setState(() { loading = true; error = null; });
+    setState(() {
+      loading = true;
+      error = null;
+    });
     try {
       final results = await Future.wait([
         widget.api.request('GET', '/api/orders?status_group=$filter&limit=100'),
         widget.api.request('GET', '/api/users'),
       ]);
-      if (mounted) setState(() {
-        orders = results[0]['orders'] as List<dynamic>? ?? [];
-        planners = (results[1]['users'] as List<dynamic>? ?? [])
-            .where((person) => person['role'] == 'planning').toList();
-        loading = false;
-      });
+      if (mounted)
+        setState(() {
+          orders = results[0]['orders'] as List<dynamic>? ?? [];
+          planners = (results[1]['users'] as List<dynamic>? ?? [])
+              .where((person) => person['role'] == 'planning')
+              .toList();
+          loading = false;
+        });
     } catch (e) {
-      if (mounted) setState(() { error = e.toString(); loading = false; });
+      if (mounted)
+        setState(() {
+          error = e.toString();
+          loading = false;
+        });
     }
   }
 
   Future<void> assign(String orderId, int userId) async {
     try {
-      await widget.api.request('POST', '/api/admin/orders/$orderId/assign', {'user_id': userId});
+      await widget.api.request(
+          'POST', '/api/admin/orders/$orderId/assign', {'user_id': userId});
       await refresh();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$e')));
       await refresh();
     }
   }
 
   @override
   Widget build(BuildContext context) => Column(children: [
-    Padding(padding: const EdgeInsets.all(16), child: Wrap(spacing: 8, children: [
-      for (final item in const [
-        ('document_review', 'Document review'),
-        ('plan_pending', 'Unassigned'),
-        ('planning_in_progress', 'Planning in progress'),
-        ('clinical_approval_pending', 'Clinician review pending'),
-        ('issue_raised', 'Issue raised'),
-      ]) ChoiceChip(label: Text(item.$2), selected: filter == item.$1,
-        onSelected: (_) { setState(() => filter = item.$1); refresh(); }),
-    ])),
-    Expanded(child: loading ? const Center(child: CircularProgressIndicator())
-      : error != null ? Center(child: Text(error!))
-      : RefreshIndicator(onRefresh: refresh, child: ListView.builder(
-          itemCount: orders.length,
-          itemBuilder: (context, index) {
-            final order = orders[index] as Map<String, dynamic>;
-            final id = order['order_id'].toString();
-            final assignee = (order['assigned_planner'] as Map?)?['name'] ?? 'Unassigned';
-            return Card(child: ListTile(
-              title: Text(id),
-              subtitle: Text('Status: ${order['status']} • Assignee: $assignee'),
-              onTap: () async {
-                await Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => OrderDetailPage(api: widget.api, orderId: id,
-                    role: 'admin', userId: widget.user['id'] as int)));
-                if (mounted) refresh();
-              },
-              trailing: filter == 'plan_pending' ? PopupMenuButton<int>(
-                tooltip: 'Assign planner',
-                onSelected: (userId) => assign(id, userId),
-                itemBuilder: (_) => [
-                  PopupMenuItem(value: widget.user['id'] as int, child: const Text('Assign to me')),
-                  for (final person in planners)
-                    PopupMenuItem(value: person['id'] as int, child: Text(person['name'].toString())),
-                ],
-              ) : null,
-            ));
-          })))
-  ]);
+        Padding(
+            padding: const EdgeInsets.all(16),
+            child: Wrap(spacing: 8, children: [
+              for (final item in const [
+                ('document_review', 'Document review'),
+                ('plan_pending', 'Unassigned'),
+                ('planning_in_progress', 'Planning in progress'),
+                ('clinical_approval_pending', 'Clinician review pending'),
+                ('issue_raised', 'Issue raised'),
+              ])
+                ChoiceChip(
+                    label: Text(item.$2),
+                    selected: filter == item.$1,
+                    onSelected: (_) {
+                      setState(() => filter = item.$1);
+                      refresh();
+                    }),
+            ])),
+        Expanded(
+            child: loading
+                ? const Center(child: CircularProgressIndicator())
+                : error != null
+                    ? Center(child: Text(error!))
+                    : RefreshIndicator(
+                        onRefresh: refresh,
+                        child: ListView.builder(
+                            itemCount: orders.length,
+                            itemBuilder: (context, index) {
+                              final order =
+                                  orders[index] as Map<String, dynamic>;
+                              final id = order['order_id'].toString();
+                              final assignee = (order['assigned_planner']
+                                      as Map?)?['name'] ??
+                                  'Unassigned';
+                              return Card(
+                                  child: ListTile(
+                                title: Text(id),
+                                subtitle: Text(
+                                    'Status: ${order['status']} • Assignee: $assignee'),
+                                onTap: () async {
+                                  await AppRouter.of(context).openOrder(id);
+                                  if (mounted) refresh();
+                                },
+                                trailing: filter == 'plan_pending'
+                                    ? PopupMenuButton<int>(
+                                        tooltip: 'Assign planner',
+                                        onSelected: (userId) =>
+                                            assign(id, userId),
+                                        itemBuilder: (_) => [
+                                          PopupMenuItem(
+                                              value: widget.user['id'] as int,
+                                              child:
+                                                  const Text('Assign to me')),
+                                          for (final person in planners)
+                                            PopupMenuItem(
+                                                value: person['id'] as int,
+                                                child: Text(
+                                                    person['name'].toString())),
+                                        ],
+                                      )
+                                    : null,
+                              ));
+                            })))
+      ]);
 }
 
 class AdminOrdersView extends StatefulWidget {
   final Api api;
   final int userId;
   final ValueChanged<Map<String, dynamic>>? onOverviewChanged;
-  const AdminOrdersView({super.key, required this.api, required this.userId, this.onOverviewChanged});
+  const AdminOrdersView(
+      {super.key,
+      required this.api,
+      required this.userId,
+      this.onOverviewChanged});
   @override
   State<AdminOrdersView> createState() => _AdminOrdersViewState();
 }
@@ -339,8 +389,8 @@ class _AdminOrdersViewState extends State<AdminOrdersView> {
       if (!mounted) return;
       final clinics = (data['clinics'] as List).cast<Map<String, dynamic>>();
       if (clinics.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('A clinic is required to create an order.')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('A clinic is required to create an order.')));
         return;
       }
       final created = await showDialog<bool>(
@@ -353,7 +403,8 @@ class _AdminOrdersViewState extends State<AdminOrdersView> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.toString())));
       }
     } finally {
       if (mounted) setState(() => openingOrderForm = false);
@@ -361,13 +412,7 @@ class _AdminOrdersViewState extends State<AdminOrdersView> {
   }
 
   Future<void> openOrder(Map<String, dynamic> order) async {
-    await Navigator.push(
-        context,
-        MaterialPageRoute(
-            builder: (_) => OrderDetailPage(
-                api: widget.api,
-                orderId: order['order_id'] as String,
-                role: 'admin', userId: widget.userId)));
+    await AppRouter.of(context).openOrder(order['order_id'] as String);
     refresh();
     refreshOverview();
   }

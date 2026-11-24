@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'orders_page.dart';
 import 'demo_style.dart';
+import 'app_router.dart';
 
 class ClinicDashboard extends StatefulWidget {
   final Api api;
@@ -41,25 +42,14 @@ class _ClinicDashboardState extends State<ClinicDashboard> {
   }
 
   Future<void> orders(String title, Map<String, String> filters) async {
-    await Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => Scaffold(
-            appBar: AppBar(title: Text(title)),
-            body: Padding(
-                padding: const EdgeInsets.all(20),
-                child: OrdersPage(
-                    api: widget.api,
-                    clinics: [widget.clinic],
-                    user: widget.user,
-                    dashboardFilters: filters)))));
-    refresh();
+    AppRouter.of(context).go(Uri(
+      path: '/clinic/orders',
+      queryParameters: filters.isEmpty ? null : filters,
+    ).toString());
   }
 
   Future<void> open(Map row) async {
-    await Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => OrderDetailPage(
-            api: widget.api,
-            orderId: row['order_id'],
-            role: widget.user['role'])));
+    await AppRouter.of(context).openOrder(row['order_id'] as String);
     refresh();
   }
 
@@ -127,7 +117,9 @@ class _ClinicDashboardState extends State<ClinicDashboard> {
     ];
     return ListView(children: [
       DemoPageHeading(
-          title: widget.user['role'] == 'clinician' ? 'My dashboard' : 'Clinic dashboard',
+          title: widget.user['role'] == 'clinician'
+              ? 'My dashboard'
+              : 'Clinic dashboard',
           subtitle:
               '${widget.clinic['clinic_name']} · Your cases and next decisions'),
       const SizedBox(height: 16),
@@ -142,9 +134,10 @@ class _ClinicDashboardState extends State<ClinicDashboard> {
                       api: widget.api, clinics: [widget.clinic]));
               refresh();
             }),
-        if (widget.user['role'] == 'clinic_admin') OutlinedButton(
-            onPressed: widget.onAddClinician,
-            child: const Text('Add clinician')),
+        if (widget.user['role'] == 'clinic_admin')
+          OutlinedButton(
+              onPressed: widget.onAddClinician,
+              child: const Text('Add clinician')),
         OutlinedButton(
             onPressed: () => orders('All orders', {}),
             child: const Text('View all orders')),
@@ -208,25 +201,27 @@ class _ClinicDashboardState extends State<ClinicDashboard> {
       ]),
       queue('Recently updated cases', data!['recent'],
           'Create your first order to get started.'),
-      if (widget.user['role'] == 'clinic_admin') Card(
-          child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Clinician overview',
-                        style: Theme.of(context).textTheme.titleLarge),
-                    for (final p in widget.clinic['clinicians'] as List? ?? [])
-                      ListTile(
-                          title: Text(p['name']),
-                          subtitle: Text(
-                              '${data!['clinicians']['${p['clinician_id']}']?['total'] ?? 0} total · '
-                              '${data!['clinicians']['${p['clinician_id']}']?['active'] ?? 0} active · '
-                              '${data!['clinicians']['${p['clinician_id']}']?['approval'] ?? 0} awaiting approval'),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => orders(p['name'],
-                              {'clinician_id': '${p['clinician_id']}'})),
-                  ]))),
+      if (widget.user['role'] == 'clinic_admin')
+        Card(
+            child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Clinician overview',
+                          style: Theme.of(context).textTheme.titleLarge),
+                      for (final p
+                          in widget.clinic['clinicians'] as List? ?? [])
+                        ListTile(
+                            title: Text(p['name']),
+                            subtitle: Text(
+                                '${data!['clinicians']['${p['clinician_id']}']?['total'] ?? 0} total · '
+                                '${data!['clinicians']['${p['clinician_id']}']?['active'] ?? 0} active · '
+                                '${data!['clinicians']['${p['clinician_id']}']?['approval'] ?? 0} awaiting approval'),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () => orders(p['name'],
+                                {'clinician_id': '${p['clinician_id']}'})),
+                    ]))),
       Card(
           child: Padding(
               padding: const EdgeInsets.all(16),

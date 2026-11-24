@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'orders_page.dart';
 import 'demo_style.dart';
+import 'app_router.dart';
 
 const _teal = Color(0xFF0B7A75);
 const _ink = Color(0xFF10242B);
@@ -11,11 +12,13 @@ class MarketingPage extends StatefulWidget {
   final Api api;
   final Map<String, dynamic> user;
   final VoidCallback onLogout;
+  final String initialSection;
   const MarketingPage(
       {super.key,
       required this.api,
       required this.user,
-      required this.onLogout});
+      required this.onLogout,
+      this.initialSection = 'Orders'});
 
   @override
   State<MarketingPage> createState() => _MarketingPageState();
@@ -27,7 +30,7 @@ class _MarketingPageState extends State<MarketingPage> {
   final Set<int> expandedClinicIds = {};
   bool loading = true;
   String? error;
-  String section = 'Orders';
+  late String section = widget.initialSection;
   int orderCount = 0;
 
   @override
@@ -250,9 +253,11 @@ class _MarketingPageState extends State<MarketingPage> {
                         Text('$count', style: const TextStyle(fontSize: 11))),
                 selected: section == name,
                 onTap: () {
-                  setState(() => section = name);
                   if (MediaQuery.sizeOf(context).width < 900)
                     Navigator.pop(context);
+                  AppRouter.of(context).go(name == 'Clinics'
+                      ? '/marketing/clinics'
+                      : '/marketing/orders');
                 })),
       );
 
@@ -637,7 +642,8 @@ class _ClinicDialogState extends State<ClinicDialog> {
       return;
     }
     if (needsAdmin && adminPassword.text.length < 8) {
-      setState(() => error = 'Clinic admin password must have at least 8 characters.');
+      setState(() =>
+          error = 'Clinic admin password must have at least 8 characters.');
       return;
     }
     if (needsAdmin && clinicians.first.email.text.trim().isEmpty) {
@@ -660,10 +666,15 @@ class _ClinicDialogState extends State<ClinicDialog> {
             () => error = 'Complete each clinician name and mobile number.');
         return;
       }
-      if (!clinician.hasLogin && !(needsAdmin && clinician == clinicians.first) &&
-          (clinician.id == null || clinician.username.text.isNotEmpty || clinician.password.text.isNotEmpty) &&
-          (clinician.username.text.trim().isEmpty || clinician.password.text.length < 8)) {
-        setState(() => error = 'Enter a username and a password of at least 8 characters for ${clinician.name.text}.');
+      if (!clinician.hasLogin &&
+          !(needsAdmin && clinician == clinicians.first) &&
+          (clinician.id == null ||
+              clinician.username.text.isNotEmpty ||
+              clinician.password.text.isNotEmpty) &&
+          (clinician.username.text.trim().isEmpty ||
+              clinician.password.text.length < 8)) {
+        setState(() => error =
+            'Enter a username and a password of at least 8 characters for ${clinician.name.text}.');
         return;
       }
       final address = clinician.email.text.trim();
@@ -761,7 +772,8 @@ class _ClinicDialogState extends State<ClinicDialog> {
                       IconButton(
                           tooltip: 'Remove clinician',
                           icon: const Icon(Icons.delete_outline),
-                          onPressed: clinician.hasLogin || (needsAdmin && clinician == clinicians.first)
+                          onPressed: clinician.hasLogin ||
+                                  (needsAdmin && clinician == clinicians.first)
                               ? null
                               : () => setState(() {
                                     clinicians.remove(clinician);
@@ -779,14 +791,23 @@ class _ClinicDialogState extends State<ClinicDialog> {
                         controller: clinician.email,
                         keyboardType: TextInputType.emailAddress,
                         decoration: InputDecoration(
-                            labelText: needsAdmin && clinician == clinicians.first
-                                ? 'Email (required for clinic admin)'
-                                : 'Email (optional)')),
-                    if (!clinician.hasLogin && !(needsAdmin && clinician == clinicians.first)) ...[
-                      TextField(controller: clinician.username,
-                          decoration: InputDecoration(labelText: clinician.id == null ? 'Username' : 'Username (to enable login)')),
-                      TextField(controller: clinician.password, obscureText: true,
-                          decoration: const InputDecoration(labelText: 'Password (at least 8 characters)')),
+                            labelText:
+                                needsAdmin && clinician == clinicians.first
+                                    ? 'Email (required for clinic admin)'
+                                    : 'Email (optional)')),
+                    if (!clinician.hasLogin &&
+                        !(needsAdmin && clinician == clinicians.first)) ...[
+                      TextField(
+                          controller: clinician.username,
+                          decoration: InputDecoration(
+                              labelText: clinician.id == null
+                                  ? 'Username'
+                                  : 'Username (to enable login)')),
+                      TextField(
+                          controller: clinician.password,
+                          obscureText: true,
+                          decoration: const InputDecoration(
+                              labelText: 'Password (at least 8 characters)')),
                     ],
                     TextField(
                         controller: clinician.role,

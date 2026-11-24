@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'api.dart';
 import 'demo_style.dart';
-import 'orders_page.dart';
+import 'app_router.dart';
 
 const _qcTabs = <(String, String)>[
   ('', 'All orders'),
@@ -87,13 +87,8 @@ class _QcOrdersPageState extends State<QcOrdersPage> {
   }
 
   Future<void> openOrder(Map<String, dynamic> order) async {
-    await Navigator.push(
-        context,
-        MaterialPageRoute(
-            builder: (_) => OrderDetailPage(
-                api: widget.api,
-                orderId: order['order_id'] as String,
-                role: 'planning', qcMode: true)));
+    await AppRouter.of(context)
+        .openOrder(order['order_id'] as String, qcMode: true);
     refreshOverview();
     refresh();
   }
@@ -157,7 +152,7 @@ class _QcOrdersPageState extends State<QcOrdersPage> {
                 style: TextStyle(fontSize: 13, color: DemoStyle.accent)),
             onTap: () {
               if (compact) Navigator.of(context).pop();
-              Navigator.of(context).pop();
+              AppRouter.of(context).go('/planning/orders');
             },
             trailing: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -177,10 +172,6 @@ class _QcOrdersPageState extends State<QcOrdersPage> {
         OutlinedButton(
             onPressed: () async {
               await widget.api.logout();
-              if (mounted) {
-                if (compact) Navigator.of(context).pop();
-                Navigator.of(context).pop();
-              }
               widget.onLogout();
             },
             child: const Text('Log out')),

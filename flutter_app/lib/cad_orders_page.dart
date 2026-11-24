@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'demo_style.dart';
 import 'orders_page.dart';
-import 'qc_orders_page.dart';
+import 'app_router.dart';
 
 const _tabs = <(String, String)>[
   ('', 'All orders'),
@@ -93,14 +93,7 @@ class _CadOrdersPageState extends State<CadOrdersPage> {
   }
 
   Future<void> openOrder(Map<String, dynamic> order) async {
-    await Navigator.push(
-        context,
-        MaterialPageRoute(
-            builder: (_) => OrderDetailPage(
-                api: widget.api,
-                orderId: order['order_id'] as String,
-                role: 'planning',
-                userId: widget.user['id'] as int)));
+    await AppRouter.of(context).openOrder(order['order_id'] as String);
     refreshOverview();
     refresh();
   }
@@ -175,13 +168,7 @@ class _CadOrdersPageState extends State<CadOrdersPage> {
             title: const Text('QC', style: TextStyle(fontSize: 13)),
             onTap: () {
               if (compact) Navigator.of(context).pop();
-              Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => QcOrdersPage(
-                          api: widget.api,
-                          user: widget.user,
-                          onLogout: widget.onLogout)));
+              AppRouter.of(context).go('/planning/qc');
             }),
         const Spacer(),
         const Divider(),

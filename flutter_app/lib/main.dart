@@ -1,13 +1,7 @@
 import 'package:flutter/material.dart';
 import 'api.dart';
-import 'admin_workspace.dart';
-import 'marketing_page.dart';
 import 'demo_style.dart';
-import 'team_page.dart';
-import 'cad_orders_page.dart';
-import 'lab_orders_page.dart';
-import 'clinic_signup.dart';
-import 'clinic_workspace.dart';
+import 'app_router.dart';
 
 void main() => runApp(const AlignFlowApp());
 
@@ -19,68 +13,21 @@ class AlignFlowApp extends StatefulWidget {
 
 class _AlignFlowAppState extends State<AlignFlowApp> {
   final api = Api();
-  Map<String, dynamic>? user;
-  bool loading = true;
+  late final AppRouter router = AppRouter(api);
 
   @override
-  void initState() {
-    super.initState();
-    _restore();
-  }
-
-  Future<void> _restore() async {
-    await api.restore();
-    if (api.token != null) {
-      try {
-        user = await api.me();
-      } catch (_) {
-        await api.logout();
-      }
-    }
-    if (mounted) setState(() => loading = false);
+  void dispose() {
+    router.dispose();
+    super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
+  Widget build(BuildContext context) => MaterialApp.router(
         title: 'AlignFlow',
         debugShowCheckedModeBanner: false,
         theme: DemoStyle.theme(),
-        home: loading
-            ? const Scaffold(body: Center(child: CircularProgressIndicator()))
-            : user == null
-                ? LoginPage(
-                    api: api, onLogin: (value) => setState(() => user = value))
-                : user!['role'] == 'admin'
-                    ? AdminWorkspace(
-                        api: api,
-                        user: user!,
-                        onLogout: () => setState(() => user = null))
-                    : user!['role'] == 'marketing'
-                        ? MarketingPage(
-                            api: api,
-                            user: user!,
-                            onLogout: () => setState(() => user = null))
-                        : ['clinic_admin', 'clinician'].contains(user!['role'])
-                            ? ClinicWorkspace(
-                                api: api,
-                                user: user!,
-                                onLogout: () => setState(() => user = null))
-                            : user!['role'] == 'planning'
-                                ? CadOrdersPage(
-                                    api: api,
-                                    user: user!,
-                                    onLogout: () => setState(() => user = null))
-                                : user!['role'] == 'production'
-                                    ? LabOrdersPage(
-                                        api: api,
-                                        user: user!,
-                                        onLogout: () =>
-                                            setState(() => user = null))
-                                    : TeamPage(
-                                        user: user!,
-                                        api: api,
-                                        onLogout: () =>
-                                            setState(() => user = null)),
+        routerDelegate: router,
+        routeInformationParser: AppRouteParser(),
       );
 }
 
@@ -193,12 +140,9 @@ class _LoginPageState extends State<LoginPage> {
                               ? null
                               : () async {
                                   await widget.api.useServer(server.text);
-                                  if (context.mounted)
-                                    Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                            builder: (_) => ClinicSignupPage(
-                                                api: widget.api)));
+                                  if (context.mounted) {
+                                    AppRouter.of(context).go('/signup');
+                                  }
                                 },
                           child: const Text('Register your clinic')),
                       const SizedBox(height: 14),

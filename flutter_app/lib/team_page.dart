@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'demo_style.dart';
 import 'orders_page.dart';
+import 'app_router.dart';
 
 const teamNames = {
   'scanner': 'Scanner team',
@@ -86,13 +87,7 @@ class _TeamPageState extends State<TeamPage> {
   }
 
   Future<void> openOrder(Map<String, dynamic> order) async {
-    await Navigator.push(
-        context,
-        MaterialPageRoute(
-            builder: (_) => OrderDetailPage(
-                api: widget.api,
-                orderId: order['order_id'] as String,
-                role: role)));
+    await AppRouter.of(context).openOrder(order['order_id'] as String);
     refresh();
   }
 
