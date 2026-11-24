@@ -1,10 +1,14 @@
 import 'package:alignflow/api.dart';
-import 'package:alignflow/clinic_workspace.dart';
+import 'package:alignflow/app_router.dart';
+import 'package:alignflow/branding.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _ClinicianApi extends Api {
   Map<String, dynamic>? submitted;
+
+  @override
+  Future<void> restore() async {}
 
   @override
   Future<Map<String, dynamic>> request(String method, String path,
@@ -45,13 +49,25 @@ void main() {
     tester.view.physicalSize = const Size(1280, 900);
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(MaterialApp(home: ClinicWorkspace(
-      api: api, user: const {'role': 'clinician', 'username': 'doctor'}, onLogout: () {},
-    )));
+    final router = AppRouter(api);
+    await tester.pumpWidget(MaterialApp.router(
+      routerDelegate: router,
+      routeInformationParser: AppRouteParser(),
+    ));
     await tester.pumpAndSettle();
+    expect(find.text('Log in'), findsWidgets);
+    expect(find.bySemanticsLabel(brandName), findsOneWidget);
+    router.login({'role': 'clinician', 'username': 'doctor'});
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel(brandName), findsOneWidget);
     expect(find.text('My dashboard'), findsOneWidget);
     expect(find.text('Add clinician'), findsNothing);
     expect(find.text('Clinicians'), findsNothing);
+    tester.view.physicalSize = const Size(390, 844);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel(brandName), findsOneWidget);
     await tester.tap(find.text('Orders'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Create order'));

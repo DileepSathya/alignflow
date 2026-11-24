@@ -5,17 +5,17 @@ abstract final class DemoStyle {
   static const bg = Color(0xfff3f6f7);
   static const surface = Colors.white;
   static const surface2 = Color(0xffeaf0f2);
-  static const ink = Color(0xff10242b);
+  static const ink = Color(0xff1b3466);
   static const muted = Color(0xff4a6068);
   static const line = Color(0xffd8e2e6);
-  static const accent = Color(0xff0b7a75);
+  static const accent = Color(0xff007783);
   static const accentSoft = Color(0xffd9efed);
   static const danger = Color(0xffb3261e);
 
   static ThemeData theme() => ThemeData(
     useMaterial3: true,
     scaffoldBackgroundColor: bg,
-    colorScheme: ColorScheme.fromSeed(seedColor: accent, primary: accent, surface: surface),
+    colorScheme: ColorScheme.fromSeed(seedColor: accent, primary: accent, secondary: ink, surface: surface),
     fontFamily: 'InstrumentSans',
     textTheme: const TextTheme(
       headlineLarge: TextStyle(fontFamily: 'Bricolage', fontSize: 30, height: 1.1, fontWeight: FontWeight.w700, color: ink),
@@ -74,35 +74,4 @@ class DemoStatusPill extends StatelessWidget {
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
     decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(99)),
     child: Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)));
-}
-
-/// The two-line wave mark used by the v3 HTML pages.
-class DemoBrandMark extends StatelessWidget {
-  final double size;
-  const DemoBrandMark({super.key, this.size = 38});
-  @override
-  Widget build(BuildContext context) => Container(width: size, height: size,
-    decoration: BoxDecoration(color: DemoStyle.accent, borderRadius: BorderRadius.circular(size * .29)),
-    child: CustomPaint(painter: _WavePainter()));
-}
-
-class _WavePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 24;
-    final paint = Paint()..color = Colors.white..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2 * scale..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round;
-    canvas.save();
-    canvas.translate((size.width - 24 * scale) / 2, (size.height - 24 * scale) / 2);
-    canvas.scale(scale);
-    final top = Path()..moveTo(4, 15)..cubicTo(4, 10, 7, 6, 12, 6)
-      ..cubicTo(17, 6, 20, 10, 20, 15);
-    final wave = Path()..moveTo(4, 15)..cubicTo(6, 18, 9, 18, 12, 15)
-      ..cubicTo(15, 18, 18, 18, 20, 15);
-    canvas.drawPath(top, paint);
-    canvas.drawPath(wave, paint);
-    canvas.restore();
-  }
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

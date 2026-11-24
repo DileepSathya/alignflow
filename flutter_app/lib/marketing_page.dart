@@ -1,3 +1,4 @@
+import 'branding.dart';
 import 'role_shell.dart';
 import 'package:flutter/material.dart';
 import 'api.dart';
@@ -167,15 +168,7 @@ class _MarketingPageState extends State<MarketingPage> {
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           const Padding(
               padding: EdgeInsets.all(20),
-              child: Row(children: [
-                DemoBrandMark(size: 34),
-                SizedBox(width: 10),
-                Text('AlignFlow',
-                    style: TextStyle(
-                        fontFamily: 'Bricolage',
-                        fontSize: 19,
-                        fontWeight: FontWeight.bold)),
-              ])),
+              child: BrandLogo()),
           Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Container(

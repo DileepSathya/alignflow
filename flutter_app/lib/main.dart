@@ -1,3 +1,4 @@
+import 'branding.dart';
 import 'package:flutter/material.dart';
 import 'api.dart';
 import 'demo_style.dart';
@@ -23,7 +24,7 @@ class _AlignFlowAppState extends State<AlignFlowApp> {
 
   @override
   Widget build(BuildContext context) => MaterialApp.router(
-        title: 'AlignFlow',
+        title: brandName,
         debugShowCheckedModeBanner: false,
         theme: DemoStyle.theme(),
         routerDelegate: router,
@@ -161,15 +162,7 @@ class _LoginPageState extends State<LoginPage> {
 class Brand extends StatelessWidget {
   const Brand({super.key});
   @override
-  Widget build(BuildContext context) => Row(children: [
-        const DemoBrandMark(),
-        const SizedBox(width: 10),
-        const Text('AlignFlow',
-            style: TextStyle(
-                fontFamily: 'Bricolage',
-                fontSize: 22,
-                fontWeight: FontWeight.bold)),
-      ]);
+  Widget build(BuildContext context) => const BrandLogo(width: 210);
 }
 
 class TeamLanding extends StatelessWidget {

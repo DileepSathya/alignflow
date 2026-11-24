@@ -73,7 +73,7 @@ class Api {
           .timeout(const Duration(seconds: 6));
       final body = jsonDecode(response.body);
       if (response.statusCode != 200 || body is! Map || body['ok'] != true) {
-        throw ApiException('This address is not an AlignFlow server.');
+        throw ApiException('This address is not a V-Clear Aligners server.');
       }
     } on ApiException {
       rethrow;
@@ -87,7 +87,7 @@ class Api {
       throw ApiException(
           'Cannot reach the PC. Check its IP, Wi-Fi, and firewall.');
     } on FormatException {
-      throw ApiException('This address is not an AlignFlow server.');
+      throw ApiException('This address is not a V-Clear Aligners server.');
     }
   }
 

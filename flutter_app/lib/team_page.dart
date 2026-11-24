@@ -1,3 +1,4 @@
+import 'branding.dart';
 import 'role_shell.dart';
 import 'package:flutter/material.dart';
 import 'api.dart';
@@ -104,15 +105,7 @@ class _TeamPageState extends State<TeamPage> {
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           const Padding(
               padding: EdgeInsets.symmetric(horizontal: 6),
-              child: Row(children: [
-                DemoBrandMark(size: 34),
-                SizedBox(width: 9),
-                Text('AlignFlow',
-                    style: TextStyle(
-                        fontFamily: 'Bricolage',
-                        fontSize: 19,
-                        fontWeight: FontWeight.w700)),
-              ])),
+              child: BrandLogo()),
           const SizedBox(height: 24),
           Container(
               padding: const EdgeInsets.all(10),

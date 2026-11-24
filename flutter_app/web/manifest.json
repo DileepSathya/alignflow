@@ -1,11 +1,11 @@
 {
-    "name": "alignflow",
-    "short_name": "alignflow",
+    "name": "V-Clear Aligners",
+    "short_name": "V-Clear Aligners",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#1B3466",
+    "theme_color": "#1B3466",
+    "description": "V-Clear Aligners workspace.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

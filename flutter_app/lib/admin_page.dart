@@ -92,7 +92,7 @@ class _AdminPageState extends State<AdminPage> {
         appBar: widget.embedded
             ? null
             : AppBar(
-                title: const Text('AlignFlow Admin'),
+                title: const Text('V-Clear Aligners Admin'),
                 backgroundColor: Colors.white,
                 actions: [
                   TextButton.icon(

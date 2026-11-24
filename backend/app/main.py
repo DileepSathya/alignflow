@@ -75,7 +75,7 @@ def order_store():
     return orders
 
 
-app = FastAPI(title="AlignFlow API")
+app = FastAPI(title="V-Clear Aligners API")
 
 
 @app.exception_handler(ServerSelectionTimeoutError)

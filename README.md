@@ -1,4 +1,4 @@
-# AlignFlow
+# V-Clear Aligners
 
 Flutter web and Android client with a FastAPI backend and a local PostgreSQL database. The original v3 demo remains in `demo_versions/v3`.
 
@@ -63,11 +63,11 @@ If you want the USB phone to reach the backend through `localhost:8000`, run `D:
 
 ## Build and install an updated APK
 
-After changing Flutter code, build a new APK from the Flutter project root:
+Build from the repository root. The script regenerates the browser and launcher icons from the Base64 logo in `flutter_app/lib/branding.dart`. Use `-Target web` for a web release.
 
 ```powershell
-cd D:\Aligner_company\flutter_app
-flutter build apk --release
+cd D:\Aligner_company
+.\scripts\build_branded_app.ps1 -Target apk
 ```
 
 Run `flutter pub get` first if you changed dependencies in `flutter_app/pubspec.yaml`. The build writes `flutter_app/build/app/outputs/flutter-apk/app-release.apk`. For successive distributed versions, increase the `version:` build number in `flutter_app/pubspec.yaml` (for example, `0.1.0+2`).
