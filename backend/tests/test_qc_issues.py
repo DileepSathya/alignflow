@@ -11,18 +11,22 @@ class FakeOrders:
         self.order = order
 
     def find_one_and_update(self, query, update, return_document=None):
-        if self.order["status"] != query["status"]:
+        if "status" in query and self.order["status"] != query["status"]:
+            return None
+        if "issue_revision" in query and self.order.get("issue_revision") != query["issue_revision"]:
             return None
         if "issues" in query:
             expected = query["issues"]["$elemMatch"]
-            if not any(issue["id"] == expected["id"] and issue["resolved_at"] is None
-                       for issue in self.order["issues"]):
+            issue = next((i for i in self.order["issues"] if all(i.get(k) == v for k, v in expected.items())), None)
+            if not issue:
                 return None
         for key, value in update.get("$set", {}).items():
-            if key == "issues.$.resolved_at":
-                next(issue for issue in self.order["issues"] if issue["id"] == expected["id"])["resolved_at"] = value
+            if key.startswith("issues.$."):
+                issue[key.removeprefix("issues.$.")] = value
             else:
                 self.order[key] = value
+        for key, amount in update.get("$inc", {}).items():
+            self.order[key] = self.order.get(key, 0) + amount
         for key, value in update.get("$push", {}).items():
             self.order.setdefault(key, []).append(value)
         return self.order
@@ -40,6 +44,11 @@ class QcIssueTests(unittest.TestCase):
         for item in self.patches:
             item.start()
             self.addCleanup(item.stop)
+
+    def resolve(self, issue_id, role, revision=False, **profile):
+        user = {"name": role, "role": role, **profile}
+        main.resolve_issue(self.order["order_id"], issue_id, user,
+                           main.IssueResolution(requires_plan_revision=revision))
 
     def raise_qc_issue(self):
         return main.add_issue("ORD-000001", main.IssueInput(text="Remake tray", raised_to="production"),
@@ -60,7 +69,8 @@ class QcIssueTests(unittest.TestCase):
         self.assertEqual([b["quantity"] for b in self.order["batches"]], [5, 5, 5, 6])
         for number in range(1, 5):
             if number > 1:
-                change("plan_completed", batch_number=number)
+                if self.order["batches"][number - 1]["status"] == "planning_in_progress":
+                    change("plan_completed", batch_number=number)
                 change("clinician_approved", batch_number=number)
             change("manufacturing_in_process", batch_number=number)
             change("manufactured", batch_number=number)
@@ -72,18 +82,21 @@ class QcIssueTests(unittest.TestCase):
                     change("plan_completed", batch_number=number + 1)
             if number == 1:
                 main.add_issue(order_id, main.IssueInput(text="Revise", raised_to="production", batch_number=1), admin)
-                main.resolve_issue(order_id, self.order["issues"][0]["id"], admin)
+                self.assertEqual(self.order["current_batch"], 1)
+                self.assertEqual(self.order["batches"][0]["status"], "issue_raised")
+                with self.assertRaises(HTTPException):
+                    change("plan_completed", batch_number=2)
+                self.resolve(self.order["issues"][0]["id"], "production")
                 self.assertEqual(self.order["current_batch"], 1)
             change("qc_approved", batch_number=number)
             self.assertEqual(self.order["current_batch"], min(number + 1, 4))
-            self.assertEqual(self.order["status"], "qc_approved" if number == 4 else "planning_in_progress")
+            self.assertEqual(self.order["status"], {4: "qc_approved"}.get(number, "planning_in_progress"))
 
     def test_qc_issue_routes_to_lab_and_blocks_approval(self):
         self.raise_qc_issue()
         self.raise_qc_issue()
-        main.resolve_issue("ORD-000001", self.order["issues"][0]["id"],
-                           user={"role": "production", "name": "Maker"})
-        self.assertEqual(self.order["status"], "qc_issues")
+        self.resolve(self.order["issues"][0]["id"], "production")
+        self.assertEqual(self.order["status"], "issue_raised")
         self.assertEqual(self.order["issues"][0]["raised_to"], "production")
         with self.assertRaises(HTTPException) as caught:
             main.change_status("ORD-000001", main.StatusInput(status="qc_approved"),
@@ -97,18 +110,17 @@ class QcIssueTests(unittest.TestCase):
             with self.subTest(role=role), self.assertRaises(HTTPException) as caught:
                 main.resolve_issue("ORD-000001", issue_id, user={"role": role, "name": role})
             self.assertEqual(caught.exception.status_code, 403)
-        main.resolve_issue("ORD-000001", issue_id, user={"role": "production", "name": "Maker"})
+        self.resolve(issue_id, "production")
         self.assertEqual(self.order["status"], "manufactured")
         self.assertIsNotNone(self.order["issues"][0]["resolved_at"])
         main.change_status("ORD-000001", main.StatusInput(status="qc_approved"),
                            user={"role": "planning", "name": "Reviewer"})
         self.assertEqual(self.order["status"], "qc_approved")
 
-    def test_qc_can_only_raise_at_manufactured_stage_for_lab(self):
-        with self.assertRaises(HTTPException) as caught:
-            main.add_issue("ORD-000001", main.IssueInput(text="Wrong team", raised_to="planning"),
-                           user={"role": "planning", "name": "Reviewer"})
-        self.assertEqual(caught.exception.status_code, 409)
+    def test_internal_issue_can_target_another_team_until_completion(self):
+        main.add_issue("ORD-000001", main.IssueInput(text="Check scan", raised_to="scanner"),
+                       user={"role": "planning", "name": "Reviewer"})
+        self.resolve(self.order["issues"][0]["id"], "scanner")
         self.order["status"] = "qc_approved"
         with self.assertRaises(HTTPException) as caught:
             self.raise_qc_issue()
@@ -123,38 +135,61 @@ class QcIssueTests(unittest.TestCase):
         self.assertEqual(caught.exception.status_code, 403)
         self.assertEqual(self.order["status"], "qc_approved")
 
-    def test_marketing_cannot_raise_qc_issue_but_can_raise_clinician_feedback(self):
-        with self.assertRaises(HTTPException) as caught:
-            main.add_issue("ORD-000001", main.IssueInput(text="Problem", raised_to="production"),
-                           user={"role": "marketing", "name": "Marketer"})
-        self.assertEqual(caught.exception.status_code, 409)
-        self.order["status"] = "plan_completed"
-        main.add_issue("ORD-000001", main.IssueInput(text="Clinician feedback", raised_to="planning"),
-                       user={"role": "marketing", "name": "Marketer"})
-        self.assertEqual(self.order["status"], "clinician_issues")
-        self.assertEqual(self.order["issues"][0]["raised_to"], "planning")
+    def test_clinician_triage_and_mixed_resolution_outcomes(self):
+        case = self.order["order_id"]
+        self.order.update(clinician_id=7, assigned_planner={"id": 12})
+        for role in ("clinician", "clinic_admin"):
+            main.add_issue(case, main.IssueInput(text="Check fit", raised_to="production"),
+                           {"role": role, "name": role})
+        first, second = self.order["issues"]
+        self.assertIsNone(first["raised_to"])
+        assignment = main.IssueAssignment(raised_to="clinician")
+        with self.assertRaises(HTTPException):
+            main.assign_issue(case, first["id"], assignment, {"role": "production"})
+        main.assign_issue(case, first["id"], assignment, {"role": "marketing", "name": "M"})
+        with self.assertRaises(HTTPException):
+            self.resolve(first["id"], "clinician", clinician_id=8)
+        self.resolve(first["id"], "clinician", revision=True, clinician_id=7)
+        self.assertEqual(self.order["status"], "issue_raised")
+        main.assign_issue(case, second["id"], main.IssueAssignment(raised_to="marketing"), {"role": "admin", "name": "A"})
+        self.resolve(second["id"], "marketing")
+        self.assertEqual(self.order["status"], "planning_in_progress")
+        main.change_status(case, main.StatusInput(status="plan_completed", aligner_quantity=2),
+                           {"role": "planning", "id": 12, "name": "P"})
+        approval = main.StatusInput(status="clinician_approved", dispatch_mode="together")
+        with self.assertRaises(HTTPException):
+            main.change_status(case, approval, {"role": "marketing", "name": "M"})
+        main.change_status(case, approval, {"role": "clinician", "clinician_id": 7, "name": "C"})
+        self.assertFalse(self.order["revision_approval_required"])
 
-    def test_admin_can_manufacture_and_resolve_production_issue(self):
+    def test_legacy_feedback_can_still_be_resolved(self):
+        self.order.update(status="clinician_issues", issues=[{"raised_to": "cad", "id": "legacy", "resolved_at": None}])
+        main.resolve_issue(self.order["order_id"], "legacy", {"role": "planning", "name": "P"})
+        self.assertEqual(self.order["status"], "plan_completed")
+
+    def test_admin_manufactures_and_production_resolves(self):
         admin = {"role": "admin", "name": "Administrator", "id": 1}
         self.order["status"] = "clinician_approved"
         for status in ("manufacturing_in_process", "manufactured"):
             main.change_status("ORD-000001", main.StatusInput(status=status), user=admin)
             self.assertEqual(self.order["status"], status)
         main.add_issue("ORD-000001", main.IssueInput(text="Remake tray", raised_to="production"), admin)
-        main.resolve_issue("ORD-000001", self.order["issues"][0]["id"], user=admin)
+        self.resolve(self.order["issues"][0]["id"], "production")
         self.assertEqual(self.order["status"], "manufactured")
-        self.assertEqual(self.order["history"][-1]["by"], admin["name"])
+        self.assertEqual(self.order["history"][-1]["by"], "production")
         main.change_status("ORD-000001", main.StatusInput(status="qc_approved"), user=admin)
         self.assertEqual(self.order["status"], "qc_approved")
 
     def test_production_can_review_and_approve_after_resolution(self):
         maker = {"role": "production", "name": "Maker"}
-        main.add_issue("ORD-000001", main.IssueInput(text="Remake tray", raised_to="production"), maker)
+        with self.assertRaises(HTTPException):
+            main.add_issue("ORD-000001", main.IssueInput(text="Remake tray", raised_to="production"), maker)
+        main.add_issue("ORD-000001", main.IssueInput(text="Confirm details", raised_to="marketing"), maker)
         approval = main.StatusInput(status="qc_approved")
         with self.assertRaises(HTTPException) as caught:
             main.change_status("ORD-000001", approval, maker)
         self.assertEqual(caught.exception.status_code, 409)
-        main.resolve_issue("ORD-000001", self.order["issues"][0]["id"], maker)
+        self.resolve(self.order["issues"][0]["id"], "admin")
         main.change_status("ORD-000001", approval, maker)
         self.assertEqual(self.order["history"][-1]["by"], "Maker")
         self.assertEqual(self.order["status"], "qc_approved")
@@ -164,14 +199,14 @@ class QcIssueTests(unittest.TestCase):
         approval = main.StatusInput(status="clinician_approved")
         self.order["status"] = "plan_completed"
         main.add_issue("ORD-000001", main.IssueInput(text="Revise plan", raised_to="planning"), admin)
-        self.assertEqual(self.order["status"], "clinician_issues")
+        self.assertEqual(self.order["status"], "issue_raised")
         issue = self.order["issues"][0]
         self.assertEqual(issue["raised_to"], "planning")
         self.assertEqual(issue["by"], "Administrator")
         with self.assertRaises(HTTPException) as caught:
             main.change_status("ORD-000001", approval, admin)
         self.assertEqual(caught.exception.status_code, 409)
-        main.resolve_issue("ORD-000001", issue["id"], {"role": "planning", "name": "Planner"})
+        self.resolve(issue["id"], "planning")
         main.change_status("ORD-000001", approval, admin)
         self.assertEqual(self.order["status"], "clinician_approved")
         self.assertEqual(self.order["history"][-1]["by"], "Administrator")

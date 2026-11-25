@@ -64,6 +64,21 @@ class QcOverviewTests(unittest.TestCase):
         self.assertEqual(orders.last_query["status"], {"$in": ["manufactured"]})
         self.assertEqual(orders.last_query["$expr"], main.resolved_qc_expression())
 
+    def test_issue_queue_uses_recipient_and_case_clinician_scope(self):
+        orders = _Orders()
+        with patch.object(main, "order_store", return_value=orders):
+            for role, recipients in (("admin", [None]), ("marketing", ["marketing", None]),
+                                     ("scanner", ["scanner"]), ("production", ["production", "lab"]),
+                                     ("clinic_admin", ["clinician"]), ("clinician", ["clinician"])):
+                with self.subTest(role=role):
+                    main.list_orders(issue_queue=True, user={"role": role, "clinic_id": 4, "clinician_id": 9})
+                    query = orders.last_query
+                    self.assertEqual(query["issues"]["$elemMatch"],
+                                     {"resolved_at": None} if role == "admin" else {"resolved_at": None, "raised_to": {"$in": recipients}})
+                    self.assertNotIn("status", query)
+                    if role in main.CLINIC_ROLES:
+                        self.assertEqual((query["clinic_id"], query["clinician_id"]), (4, 9))
+
     def test_other_roles_cannot_read_qc_overview(self):
         with self.assertRaises(HTTPException) as caught:
             main.qc_overview(user={"role": "marketing"})

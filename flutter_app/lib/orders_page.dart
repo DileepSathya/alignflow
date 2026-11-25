@@ -16,6 +16,7 @@ const _statuses = <String, String>{
   'submitted': 'Ready for Planning',
   'planning_in_progress': 'Planning in progress',
   'plan_completed': 'Clinician review pending',
+  'issue_raised': 'Issue Raised',
   'clinician_issues': 'Clinician raised issues',
   'clinician_approved': 'Clinician approved',
   'manufacturing_in_process': 'Manufacturing in process',
@@ -46,6 +47,11 @@ String assignedClinicianName(Map order) {
   }
   return '—';
 }
+
+const issueRecipients = {
+  'marketing': 'Marketing', 'scanner': 'Scanner', 'planning': 'Planning',
+  'production': 'Production', 'clinician': 'Case clinician',
+};
 
 const _progressSteps = <(String, String)>[
   ('scanner_review', 'Preparing documents'),
@@ -148,6 +154,7 @@ class _OrdersPageState extends State<OrdersPage> {
 
   @override
   Widget build(BuildContext context) {
+    final issueQueue = widget.dashboardFilters.containsKey('issue_queue');
     final narrow = MediaQuery.sizeOf(context).width < 700;
     final desktop = MediaQuery.sizeOf(context).width >= 1050;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -157,11 +164,11 @@ class _OrdersPageState extends State<OrdersPage> {
           spacing: 12,
           runSpacing: 12,
           children: [
-            const DemoPageHeading(
-                title: 'Orders',
+            DemoPageHeading(
+                title: issueQueue ? 'Issue queue' : 'Orders',
                 subtitle:
-                    'Track every patient case from submission to delivery.'),
-            if (['marketing', 'clinic_admin', 'clinician']
+                    issueQueue ? 'Open an order to review its assigned issues.' : 'Track every patient case from submission to delivery.'),
+            if (!issueQueue && ['marketing', 'clinic_admin', 'clinician']
                 .contains(widget.user['role']))
               FilledButton.icon(
                   onPressed: create,
@@ -384,7 +391,7 @@ class _OrderStatus extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final completed = {'qc_approved', 'manufacture_completed'};
-    final issues = {'cancelled', 'clinician_issues', 'qc_issues'};
+    final issues = {'issue_raised', 'cancelled', 'clinician_issues', 'qc_issues'};
     final color = completed.contains(status)
         ? const Color(0xFF1B7F4B)
         : issues.contains(status)
@@ -737,12 +744,14 @@ class OrderDetailPage extends StatefulWidget {
   final String role;
   final int? userId;
   final bool qcMode;
+  final bool openIssues;
   const OrderDetailPage(
       {super.key,
       required this.api,
       required this.orderId,
       this.role = 'marketing',
       this.userId,
+      this.openIssues = false,
       this.qcMode = false});
   @override
   State<OrderDetailPage> createState() => _OrderDetailPageState();
@@ -760,6 +769,14 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
   final replyDrafts = <String, TextEditingController>{};
   final issueFiles = <PlatformFile>[];
   String? savedIssueId;
+  String? issueRecipient;
+  bool get clinicUser => const {'clinician', 'clinic_admin'}.contains(widget.role);
+
+  List<DropdownMenuItem<String>> recipientItems({bool raising = false}) => [
+    for (final recipient in issueRecipients.entries)
+      if ((!raising || recipient.key != widget.role) && (recipient.key != 'clinician' || order?['clinician_id'] != null))
+        DropdownMenuItem(value: recipient.key, child: Text(recipient.value)),
+  ];
   int? issueBatch;
   String? issueError;
   int? selectedBatch;
@@ -787,6 +804,10 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (widget.openIssues) {
+      collapsedSections.remove('issues');
+      issuePoll = Timer.periodic(const Duration(seconds: 10), (_) => pollIssues());
+    }
     issueScroll.addListener(() {
       if (openConversations.isNotEmpty && issuesVisible) setState(() {});
     });
@@ -823,7 +844,17 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
           await widget.api.request('GET', '/api/orders/${widget.orderId}');
       if (mounted)
         setState(() {
+          final firstLoad = order == null;
           order = result['order'] as Map<String, dynamic>;
+          if (firstLoad && widget.openIssues) {
+            for (final issue in order!['issues'] as List) {
+              if (issue['resolved_at'] == null && (issue['can_resolve'] == true ||
+                  (issue['raised_to'] == null && const {'marketing', 'admin'}.contains(widget.role)))) {
+                selectedBatch = issue['batch_number'] as int?;
+                break;
+              }
+            }
+          }
           error = null;
         });
     } catch (e) {
@@ -844,8 +875,9 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
       final result = await widget.api.request(method, path, body);
       if (mounted)
         setState(() {
+          final previousCurrent = order?['current_batch'];
           order = result['order'] as Map<String, dynamic>;
-          selectedBatch = null;
+          if (selectedBatch == previousCurrent) selectedBatch = null;
         });
     } catch (e) {
       if (mounted) setState(() => error = e.toString());
@@ -982,7 +1014,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
     }
   }
 
-  Future<void> raiseIssue(bool isQc) async {
+  Future<void> raiseIssue() async {
     final description = issueText.text.trim();
     if (description.isEmpty) {
       setState(() => issueError = 'Describe the issue before submitting.');
@@ -997,11 +1029,12 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
         final result = await widget.api.request('POST', '/api/orders/${widget.orderId}/issues', {
           if (batchNumber != null) 'batch_number': batchNumber,
           'text': description,
-          'raised_to': isQc ? 'production' : 'planning',
+          if (!clinicUser) 'raised_to': issueRecipient,
         });
         if (!mounted) return;
         setState(() {
           issueBatch = batchNumber;
+          selectedBatch = issueBatch;
           savedIssueId = result['issue_id'] as String;
           order = result['order'] as Map<String, dynamic>;
         });
@@ -1016,7 +1049,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
         });
       }
       issueText.clear();
-      setState(() => savedIssueId = null);
+      setState(() { savedIssueId = null; issueRecipient = null; });
     } catch (e) {
       if (mounted) setState(() => issueError = savedIssueId == null
           ? e.toString()
@@ -1026,9 +1059,14 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
     }
   }
 
-  Widget issueForm(bool isQc) => Column(
+  Widget issueForm() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
+      if (savedIssueId == null && !clinicUser)
+        DropdownButton<String>(value: issueRecipient, hint: const Text('Assign issue to'),
+          items: recipientItems(raising: true), onChanged: busy ? null : (team) => setState(() => issueRecipient = team)),
+      if (savedIssueId == null && clinicUser)
+        const Text('Marketing or Admin will assign your issue.'),
       if (savedIssueId == null)
         TextField(controller: issueText, enabled: !busy, minLines: 2, maxLines: 4,
           maxLength: 5000, decoration: const InputDecoration(hintText: 'Describe the issue')),
@@ -1050,7 +1088,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
       if (issueError != null)
         Text(issueError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
       Align(alignment: Alignment.centerRight, child: FilledButton(
-        onPressed: busy ? null : () => raiseIssue(isQc),
+        onPressed: busy || (!clinicUser && issueRecipient == null && savedIssueId == null) ? null : raiseIssue,
         child: Text(savedIssueId == null ? 'Raise issue' : 'Retry upload'))),
     ],
   );
@@ -1125,10 +1163,9 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
     final id = item['id'] as String;
     final isOpen = item['resolved_at'] == null;
     final expanded = issueExpansion[id] ?? (isOpen && openCount == 1);
-    final production = ['lab', 'production'].contains(item['raised_to']);
-    final canResolve = production
-        ? canManufacture && data['status'] == 'qc_issues'
-        : widget.role == 'planning' && data['status'] == 'clinician_issues';
+    final target = item['raised_to'];
+    final recipient = issueRecipients[target] ?? const {'cad': 'Planning', 'lab': 'Production'}[target] ?? 'Awaiting assignment';
+    final canAssign = isOpen && target == null && const {'marketing', 'admin'}.contains(widget.role);
     return Column(key: ValueKey(id), crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       ListTile(
         leading: Icon(expanded ? Icons.expand_more : Icons.chevron_right),
@@ -1142,12 +1179,22 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
         ListTile(
           contentPadding: EdgeInsets.zero,
           title: Text(item['text'] as String),
-          subtitle: Text('${item['by']} → ${production ? 'Production team' : 'Planning team'}'),
-          trailing: canResolve && isOpen ? TextButton(
-            onPressed: busy ? null : () => action('POST', '/api/orders/${widget.orderId}/issues/$id/resolve'),
-            child: const Text('Resolve'),
-          ) : null,
+          subtitle: Text('${item['by']} → $recipient'),
+          trailing: isOpen && item['can_resolve'] == true
+              ? PopupMenuButton<bool>(enabled: !busy, tooltip: 'Resolve issue',
+                  onSelected: (revision) => action('POST', '/api/orders/${widget.orderId}/issues/$id/resolve',
+                      {'requires_plan_revision': revision}),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: false, child: Text('Clarification only · resume interrupted stage')),
+                    PopupMenuItem(value: true, child: Text('Plan revision required')),
+                  ], child: const Chip(label: Text('Resolve issue')))
+              : null,
         ),
+        if (canAssign)
+          DropdownButton<String>(hint: const Text('Assign issue to'), items: recipientItems(),
+            onChanged: busy ? null : (team) => action('POST', '/api/orders/${widget.orderId}/issues/$id/assign', {'raised_to': team})),
+        if (item['resolved_by'] != null)
+          Text('Resolved by ${item['resolved_by']} · ${item['requires_plan_revision'] == true ? 'Plan revision required' : 'Clarification only'}'),
         issueDiscussion(item, data),
         ]),
       ),
@@ -1547,7 +1594,10 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
     final number = batchNumber;
     final batches = order?['batches'] as List?;
     final data = number == null ? order : <String, dynamic>{
-      ...order!, 'status': number == order!['current_batch'] ? order!['status'] : batches![number - 1]['status'],
+      ...order!, ...Map<String, dynamic>.from(batches![number - 1] as Map),
+      if (number == order!['current_batch']) 'status': order!['status'],
+      if (order!['status'] == 'issue_raised' && !const {'upcoming', 'qc_approved'}.contains(batches[number - 1]['status'])) 'status': 'issue_raised',
+      'planner_assignment_open': const {'planning_in_progress', 'submitted', 'plan_completed', 'clinician_issues'}.contains(batches[number - 1]['status']),
       'issues': (order!['issues'] as List).where((i) => i['batch_number'] == number).toList(),
     };
     final openCount = (data?['issues'] as List? ?? []).where((i) => i['resolved_at'] == null).length;
@@ -1563,9 +1613,11 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
                   Text('${batches.where((b) => b['status'] == 'qc_approved').length}/${batches.length} batches complete'),
                   for (var i = 1; i <= batches.length; i++)
                     ListTile(selected: i == number, title: Text(batchLabel(data, i)),
-                      onTap: busy ? null : () => setState(() => selectedBatch = i)),
+                      onTap: busy || savedIssueId != null ? null : () => setState(() => selectedBatch = i)),
                 ],
                 if (data['aligner_quantity'] != null) Text("Total aligners: ${data['aligner_quantity']}"),
+                if (order!['status'] == 'issue_raised')
+                  const Text('Order on hold until all open issues are resolved.'),
                 Text(data['patient_name'] as String,
                     style: const TextStyle(
                         fontSize: 26, fontWeight: FontWeight.bold)),
@@ -1740,10 +1792,9 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
                           for (final item in data['issues'] as List)
                             issueRow(item as Map, data, openCount),
                           if ((savedIssueId != null && issueBatch == number) ||
-                              (savedIssueId == null && (number == null || number == order!['current_batch']) &&
-                                ((canReviewPlan && ['plan_completed', 'clinician_issues'].contains(data['status'])) ||
-                                 (canReviewQc && ['manufactured', 'qc_issues'].contains(data['status'])))))
-                            issueForm(['manufactured', 'qc_issues'].contains(data['status'])),
+                              (savedIssueId == null && (number == null || number == order!['current_batch'] || order!['independent_batches'] == true) &&
+                                !const {'cancelled', 'upcoming', 'qc_approved', 'manufacture_completed'}.contains(data['status'])))
+                            issueForm(),
                         ]), section: 'issues'),
                 if (number == null && ['marketing', 'clinic_admin', 'clinician']
                         .contains(widget.role) &&
@@ -1854,7 +1905,8 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
                               : submitPlan,
                           child: const Text('Plan completed')),
                   ]),
-                if (canReviewPlan && data['status'] == 'plan_completed')
+                if (canReviewPlan && data['status'] == 'plan_completed' &&
+                    (data['revision_approval_required'] != true || data['can_approve_revision'] == true))
                   FilledButton(
                       onPressed: busy
                           ? null

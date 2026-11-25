@@ -10,6 +10,7 @@ class _IssueApi extends Api {
   bool batches = false;
   int unread = 0;
   String? postedPath;
+  Map<String, dynamic>? postedBody;
   String? reply;
   List<Map<String, dynamic>> orderDocuments = [];
 
@@ -24,6 +25,7 @@ class _IssueApi extends Api {
     }
     if (method == 'POST') {
       postedPath = path;
+      postedBody = data;
       reply = data!['text'] as String;
     }
     if (method == 'PATCH' && path == '/api/orders/ORD-1/documents/legacy/category') {
@@ -31,6 +33,7 @@ class _IssueApi extends Api {
           data!['category'];
     }
     return {
+      if (path.endsWith('/issues')) 'issue_id': 'new',
       'order': {
         'patient_name': 'Test patient', 'clinic': {}, 'history': [],
         'status': 'clinician_issues', 'comments': [],
@@ -56,6 +59,31 @@ class _IssueApi extends Api {
 }
 
 void main() {
+  for (final role in ['clinician', 'production']) {
+    testWidgets('$role raises an issue with the correct routing', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 2400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final api = _IssueApi();
+      await tester.pumpWidget(MaterialApp(home: OrderDetailPage(
+          api: api, orderId: 'ORD-1', role: role, openIssues: true)));
+      await tester.pumpAndSettle();
+      if (role == 'production') {
+        await tester.tap(find.byType(DropdownButton<String>));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Marketing').last);
+        await tester.pumpAndSettle();
+      } else {
+        expect(find.text('Assign issue to'), findsNothing);
+      }
+      await tester.enterText(find.widgetWithText(TextField, 'Describe the issue'), 'Check instructions');
+      await tester.tap(find.text('Raise issue'));
+      await tester.pumpAndSettle();
+      expect(api.postedPath, '/api/orders/ORD-1/issues');
+      expect(api.postedBody, {'text': 'Check instructions', if (role == 'production') 'raised_to': 'marketing'});
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
   testWidgets('document panels show separate counts and admins can classify legacy files', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 2400));
     addTearDown(() => tester.binding.setSurfaceSize(null));

@@ -373,6 +373,7 @@ String _labStatus(Object? status) => switch (status) {
       'clinician_approved' => 'Manufacturing not started',
       'manufacturing_in_process' => 'Manufacturing in process',
       'manufactured' => 'QC approval pending',
+      'issue_raised' => 'Issue Raised',
       'qc_issues' => 'QC issue raised',
       _ => 'Manufacturing completed',
     };

@@ -404,13 +404,14 @@ String _qcOrderLabel(Map order) {
 
 String _qcStatus(Map<String, dynamic> order) {
   final status = order['status'];
-  if (status == 'qc_issues') return 'Issue raised';
+  if (status == 'qc_issues' || status == 'issue_raised') return 'Issue raised';
   if (status == 'manufactured') {
     final issues = (order['issues'] as List?) ?? [];
     return issues.any((issue) =>
             issue is Map &&
             issue['batch_number'] == order['current_batch'] &&
-            ['lab', 'production'].contains(issue['raised_to']) &&
+            (issue['resume_status'] == 'manufactured' || (issue['resume_status'] == null &&
+                ['lab', 'production'].contains(issue['raised_to']))) &&
             issue['resolved_at'] != null)
         ? 'Issue resolved'
         : 'QC approval pending';

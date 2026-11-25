@@ -68,9 +68,9 @@ class ScannerTests(unittest.TestCase):
         self.doc.update(clinic_id=10, clinician_id=4, status="plan_completed", issues=[])
         order_id = self.doc["order_id"]
         result = main.add_issue(order_id, main.IssueInput(text="Revise plan", raised_to="planning"), user=user)
-        self.assertEqual(result["order"]["status"], "clinician_issues")
-        main.change_status(order_id, main.StatusInput(status="cancelled"), user=user)
-        self.assertEqual(self.doc["status"], "cancelled")
+        self.assertEqual(result["order"]["status"], "issue_raised")
+        self.assertIsNone(result["order"]["issues"][0]["raised_to"])
+        self.assert_status(409, main.change_status, order_id, main.StatusInput(status="cancelled"), user=user)
         self.doc.update(status="plan_completed", issues=[])
         main.change_status(order_id, main.StatusInput(status="clinician_approved"), user=user)
         self.assert_status(409, main.change_status, order_id, main.StatusInput(status="cancelled"), user=user)

@@ -3,6 +3,7 @@ import secrets
 import hashlib
 import hmac
 from pathlib import Path
+from typing import Literal
 
 import psycopg
 from psycopg.rows import dict_row
@@ -69,12 +70,17 @@ def order_store():
         orders.create_index("request_id", unique=True, sparse=True)
         orders.create_index([("created_at", DESCENDING)])
         orders.create_index([("status", ASCENDING), ("created_at", DESCENDING)])
-        for order in orders.find({"batches.status": {"$in": ["manufactured", "qc_issues"]}},
+        for order in orders.find({"issues": {"$not": {"$elemMatch": {"resolved_at": None}}}, "independent_batches": {"$ne": True}, "batches.status": {"$in": ["manufactured", "qc_issues"]}},
                                  {"status": 1, "batches": 1, "current_batch": 1, "assigned_planner": 1}):
             fields = sequential_batch_fields(order, deepcopy(order["batches"]))
             if any(order.get(key) != value for key, value in fields.items()):
                 orders.update_one({"_id": order["_id"], "batches": order["batches"],
                                    "status": order["status"]}, {"$set": fields})
+        for held in orders.find({"independent_batches": True, "issues": {"$elemMatch": {"resolved_at": None}}}):
+            numbers = [i["batch_number"] for i in held["issues"] if i.get("resolved_at") is None and i.get("batch_number")]
+            if numbers:
+                orders.update_one({"_id": held["_id"], "issue_revision": held.get("issue_revision"), "batches": held["batches"]},
+                                  {"$set": {"status": "issue_raised", "current_batch": min(numbers)}})
         orders.update_many({"status": "submitted", "assigned_planner": None,
                             "scanner_approved": {"$ne": True}},
                            {"$set": {"status": "scanner_review", "checklist": new_checklist(),
@@ -275,7 +281,8 @@ def current_user(request: Request, authorization: str | None = Header(default=No
         route = request.scope.get("route")
         template = getattr(route, "path", "")
         issue_reply = request.method == "POST" and template in {
-            "/api/orders/{order_id}/issues/{issue_id}/replies", "/api/orders/{order_id}/issues/{issue_id}/read"}
+            "/api/orders/{order_id}/issues/{issue_id}/replies", "/api/orders/{order_id}/issues/{issue_id}/read",
+            "/api/orders/{order_id}/issues/{issue_id}/resolve"}
         checklist_edit = request.method == "PUT" and template == "/api/orders/{order_id}/checklist/{item_id}"
         review_submit = request.method == "POST" and template == "/api/orders/{order_id}/document-review/submit"
         if not (checklist_edit or review_submit or issue_reply or (request.method == 'GET' and allowed_get) or (request.method == 'POST' and allowed_post)):
@@ -700,10 +707,21 @@ class CommentInput(BaseModel):
     text: str = Field(min_length=1, max_length=5000)
 
 
+IssueRecipient = Literal["planning", "production", "marketing", "scanner", "clinician"]
+
+
+class IssueAssignment(BaseModel):
+    raised_to: IssueRecipient
+
+
+class IssueResolution(BaseModel):
+    requires_plan_revision: bool
+
+
 class IssueInput(BaseModel):
     batch_number: int | None = Field(None, ge=1)
     text: str = Field(min_length=1, max_length=5000)
-    raised_to: str = Field(default="planning", pattern=r"^(planning|production)$")
+    raised_to: IssueRecipient | None = None
 
 
 class StatusInput(BaseModel):
@@ -720,9 +738,10 @@ def workflow_view(order, number):
         return order
     if number is None or not 1 <= number <= len(batches):
         raise HTTPException(409, "Select a batch and retry")
-    if number != order["current_batch"]:
+    if number != order["current_batch"] and (not order.get("independent_batches")
+            or batches[number - 1]["status"] in {"upcoming", "qc_approved"}):
         raise HTTPException(409, "Only the current batch can be updated")
-    return {**order, "status": batches[number - 1]["status"],
+    return {**order, **batches[number - 1],
             "issues": [i for i in order["issues"] if i.get("batch_number") == number]}
 
 
@@ -733,8 +752,28 @@ def batch_transition(order, number, target, fields, guard):
     guard.update(status=order["status"], batches=order["batches"])
     batches = deepcopy(order["batches"])
     batches[number - 1]["status"] = target
-    fields.update(sequential_batch_fields(order, batches))
-
+    for flag in ("revision_approval_required", "issue_revision_requested"):
+        if flag in fields:
+            batches[number - 1][flag] = fields.pop(flag)
+    open_batches = {issue.get("batch_number") for issue in order.get("issues", [])
+                    if issue.get("resolved_at") is None}
+    if target == "issue_raised":
+        open_batches.add(number)
+    else:
+        open_batches.discard(number)
+    if open_batches:
+        fields.update(batches=batches, status="issue_raised", current_batch=min(open_batches))
+    elif order.get("independent_batches"):
+        current = next((i for i, batch in enumerate(batches, 1) if batch["status"] != "qc_approved"), len(batches))
+        batch = batches[current - 1]
+        if batch["status"] == "upcoming":
+            batch["status"] = "planning_in_progress"
+        status = batch["status"]
+        if status == "planning_in_progress" and not order.get("assigned_planner"):
+            status = "submitted"
+        fields.update(batches=batches, current_batch=current, status=status)
+    else:
+        fields.update(sequential_batch_fields(order, batches))
 
 def sequential_batch_fields(order, batches):
     current = next((i for i, b in enumerate(batches, 1) if b["status"] != "qc_approved"), len(batches))
@@ -1001,8 +1040,10 @@ def public_order(doc, user=None):
         replies = issue.get("replies", [])
         unread = sum(r.get("author_id") is not None and r["author_id"] != viewer
                      for r in replies[receipts.get(issue["id"], 0):]) if viewer is not None else 0
-        result["issues"].append({**issue, "number": number, "unread": unread})
+        result["issues"].append({**issue, "number": number, "unread": unread,
+                                 "can_resolve": bool(user and can_resolve_issue(doc, issue, user))})
     result["id"] = str(doc["_id"])
+    result["can_approve_revision"] = bool(user and case_clinician(doc, user))
     result["planner_assignment_open"] = doc.get("status") in PLANNER_ASSIGNMENT_STEPS
     linked_ids = checklist_document_ids(doc)
     result["documents"] = [
@@ -1030,12 +1071,36 @@ def clinic_order_scope(user):
     return scope
 
 
+def case_clinician(doc, user):
+    return (user["role"] in CLINIC_ROLES and user.get("clinician_id") is not None
+            and user["clinician_id"] == doc.get("clinician_id"))
+
+
+def can_resolve_issue(doc, issue, user):
+    team = {"cad": "planning", "lab": "production"}.get(issue.get("raised_to"), issue.get("raised_to"))
+    if user["role"] == "admin":
+        return bool(team)
+    if team == "clinician":
+        return case_clinician(doc, user)
+    if not issue.get("resume_status"):  # Preserve resolution rights on existing feedback.
+        planner = doc.get("assigned_planner")
+        if team == "planning" and planner and planner["id"] != user.get("id"):
+            return False
+    return team == user["role"]
+
+
 def get_order(order_id: str, user: dict):
     doc = order_store().find_one({"order_id": order_id})
     if doc is None:
         raise HTTPException(status_code=404, detail="Order not found")
     if user["role"] in CLINIC_ROLES and any(doc.get(k) != v for k, v in clinic_order_scope(user).items()):
         raise HTTPException(status_code=404, detail="Order not found")
+    if user["role"] in {"planning", "production"} and any(
+        issue.get("resolved_at") is None and (issue.get("raised_to") == user["role"]
+        or issue.get("raised_by_role") == user["role"] or
+        (user["role"] == "production" and issue.get("resume_status") in VISIBLE_PRODUCTION_STEPS)) for issue in doc.get("issues", [])
+    ):
+        return doc
     if user["role"] == "production" and doc["status"] not in VISIBLE_PRODUCTION_STEPS and not doc.get("batches"):
         raise HTTPException(status_code=404, detail="Order not found")
     if user["role"] == "planning" and doc["status"] != DOCUMENT_REVIEW and (doc["status"] in SCANNER_STEPS or
@@ -1205,7 +1270,7 @@ def marketing_performance(year: int, month: int, user=Depends(admin_user), conn=
 
 
 CLINIC_GROUPS = {
-    "active": SCANNER_STEPS + [DOCUMENT_REVIEW] + ORDER_STEPS[:-1],
+    "active": SCANNER_STEPS + [DOCUMENT_REVIEW, "issue_raised"] + ORDER_STEPS[:-1],
     "scanner": SCANNER_STEPS,
     "planning": [DOCUMENT_REVIEW, "submitted", "planning_in_progress"],
     "approval": ["plan_completed"],
@@ -1246,7 +1311,8 @@ def clinic_overview(user=Depends(current_user)):
             "clinician_id": row.get("clinician_id"), "status": row["status"],
             "updated_at": row.get("updated_at", created).isoformat(),
             "stage_since": entered.isoformat() if isinstance(entered, datetime) else entered,
-            "revised": any(h["status"] == "clinician_issues" for h in row.get("history", [])),
+            "revised": any(h["status"] == "clinician_issues" for h in row.get("history", [])) or
+                       any(i.get("requires_plan_revision") for i in row.get("issues", [])),
             "missing_request": row.get("missing_request") if row["status"] == "scanner_missing" else None})
     return {"counts": counts, "year": year, "months": months, "clinicians": clinicians,
             "approvals": sorted([r for r in summaries if r["status"] == "plan_completed"], key=lambda r: r["stage_since"]),
@@ -1269,7 +1335,7 @@ ADMIN_STAGE_GROUPS = {
 @app.get("/api/orders")
 def list_orders(q: str = "", status_filter: str = "", status_group: str = "", view: str = "",
                 clinic_id: int | None = None, page: int = 1, limit: int = 25, mine: bool = False, scanner_approved: bool = False,
-    scanner_missing: bool = False, clinician_id: int | None = None, created_month: str = "",
+    scanner_missing: bool = False, issue_queue: bool = False, clinician_id: int | None = None, created_month: str = "",
                 admin_bucket: str = "",
                 marketer_id: int | None = None, period: str = "", batches_only: bool = False,
                 user=Depends(current_user)):
@@ -1300,7 +1366,7 @@ def list_orders(q: str = "", status_filter: str = "", status_group: str = "", vi
     if mine:
         query["assigned_planner.id"] = user["id"]
     qc_view = view == "qc"
-    production_view = (user["role"] == "production" and not qc_view) or (view == "production" and user["role"] == "admin")
+    production_view = (user["role"] == "production" and not qc_view and not issue_queue) or (view == "production" and user["role"] == "admin")
     if view and not (view == "production" and production_view):
         if not qc_view or user["role"] not in QC_REVIEW_ROLES:
             raise HTTPException(status_code=403, detail="QC view is restricted")
@@ -1313,7 +1379,7 @@ def list_orders(q: str = "", status_filter: str = "", status_group: str = "", vi
             "plan_pending": ["submitted"],
             "planning_in_progress": ["planning_in_progress"],
             "clinical_approval_pending": ["plan_completed"],
-            "issue_raised": ["clinician_issues"],
+            "issue_raised": ["clinician_issues", "issue_raised"],
             "approved": ["clinician_approved", "manufacturing_in_process", "manufactured", "qc_issues",
                          "qc_approved", "manufacture_completed"],
             "cancelled": ["cancelled"],
@@ -1359,9 +1425,19 @@ def list_orders(q: str = "", status_filter: str = "", status_group: str = "", vi
         pattern = re.escape(q.strip()[:100])
         query["$or"] = [{field: {"$regex": pattern, "$options": "i"}}
                         for field in ("order_id", "patient_name", "clinic.name", "clinic.dentist")]
-    if user["role"] == "planning":
+    if issue_queue:
+        role = user["role"]
+        recipients = {"marketing": ["marketing", None], "admin": [None],
+                      "planning": ["planning", "cad"], "production": ["production", "lab"]}
+        if role in CLINIC_ROLES:
+            query["clinician_id"] = user.get("clinician_id") or -1
+            teams = ["clinician"]
+        else:
+            teams = recipients.get(role, [role])
+        query["issues"] = {"$elemMatch": {"resolved_at": None} if role == "admin" else {"raised_to": {"$in": teams}, "resolved_at": None}}
+    if user["role"] == "planning" and not issue_queue:
         query["$and"] = [planning_visibility()]
-    if user["role"] == "scanner":
+    if user["role"] == "scanner" and not issue_queue:
         query.setdefault("checklist", {"$exists": True})
     if admin_bucket or marketer_id is not None:
         if user["role"] != "admin" or view:
@@ -1377,6 +1453,12 @@ def list_orders(q: str = "", status_filter: str = "", status_group: str = "", vi
         query["created_at"] = {"$gte": start, "$lt": end}
         query["created_by.id"] = marketer_id
         query.setdefault("$and", []).append({"status": {"$ne": "cancelled"}})
+    if (qc_view or production_view) and "status" in query:
+        visible = QC_VISIBLE_STEPS if qc_view else VISIBLE_PRODUCTION_STEPS
+        if (not status_group and not status_filter) or status_group == "qc_issue_raised" or status_filter == "issue_raised":
+            query["status"]["$in"] = list(query["status"]["$in"]) + ["issue_raised"]
+            query.setdefault("$and", []).append(issue_stage_scope(
+                ["manufactured"] if status_group == "qc_issue_raised" else visible))
     if batches_only:
         query["dispatch_mode"] = "batches"
         if production_view and not status_filter and not status_group:
@@ -1408,11 +1490,16 @@ def cad_overview(user=Depends(current_user)):
             "plan_pending": statuses.get("submitted", 0),
             "planning_in_progress": statuses.get("planning_in_progress", 0),
             "clinical_approval_pending": statuses.get("plan_completed", 0),
-            "issue_raised": statuses.get("clinician_issues", 0),
+            "issue_raised": statuses.get("clinician_issues", 0) + statuses.get("issue_raised", 0),
             "approved": sum(statuses.get(key, 0) for key in
                             ("clinician_approved", "manufacturing_in_process", "manufactured", "qc_issues",
                              "qc_approved", "manufacture_completed")),
             "cancelled": statuses.get("cancelled", 0), "clinics": clinics}
+
+
+def issue_stage_scope(stages):
+    return {"$or": [{"status": {"$ne": "issue_raised"}},
+                    {"issues": {"$elemMatch": {"resolved_at": None, "resume_status": {"$in": stages}}}}]}
 
 
 @app.get("/api/lab/overview")
@@ -1421,12 +1508,12 @@ def lab_overview(user=Depends(current_user)):
         raise HTTPException(status_code=403, detail="Production team or admin only")
     collection = order_store()
     statuses = {row["_id"]: row["count"] for row in collection.aggregate([
-        {"$match": {"status": {"$in": VISIBLE_PRODUCTION_STEPS}}},
+        {"$match": {"status": {"$in": VISIBLE_PRODUCTION_STEPS + ["issue_raised"]}, **issue_stage_scope(VISIBLE_PRODUCTION_STEPS)}},
         {"$group": {"_id": "$status", "count": {"$sum": 1}}},
     ])}
     clinics = [{"id": row["_id"], "name": row["name"]}
                for row in collection.aggregate([
-                   {"$match": {"status": {"$in": VISIBLE_PRODUCTION_STEPS},
+                   {"$match": {"status": {"$in": VISIBLE_PRODUCTION_STEPS + ["issue_raised"]}, **issue_stage_scope(VISIBLE_PRODUCTION_STEPS),
                                "clinic_id": {"$ne": None}}},
                    {"$group": {"_id": "$clinic_id", "name": {"$first": "$clinic.name"}}},
                    {"$sort": {"name": 1}},
@@ -1435,7 +1522,8 @@ def lab_overview(user=Depends(current_user)):
             "manufacturing_not_started": statuses.get("clinician_approved", 0),
             "manufacturing_in_process": statuses.get("manufacturing_in_process", 0),
             "qc_approval_pending": statuses.get("manufactured", 0),
-            "qc_issue_raised": statuses.get("qc_issues", 0),
+            "qc_issue_raised": statuses.get("qc_issues", 0) + collection.count_documents({
+                "status": "issue_raised", **issue_stage_scope(["manufactured"])}),
             "manufacturing_completed": statuses.get("qc_approved", 0) +
                                        statuses.get("manufacture_completed", 0),
             "clinics": clinics}
@@ -1445,7 +1533,9 @@ def resolved_qc_expression():
     return {"$anyElementTrue": [{"$map": {
         "input": {"$ifNull": ["$issues", []]}, "as": "issue",
         "in": {"$and": [
-            {"$in": ["$$issue.raised_to", ["production", "lab"]]},
+            {"$or": [{"$eq": ["$$issue.resume_status", "manufactured"]},
+                     {"$and": [{"$eq": [{"$ifNull": ["$$issue.resume_status", None]}, None]},
+                               {"$in": ["$$issue.raised_to", ["production", "lab"]]}]}]},
             {"$ne": [{"$ifNull": ["$$issue.resolved_at", None]}, None]},
             {"$eq": [{"$ifNull": ["$$issue.batch_number", 0]}, {"$ifNull": ["$current_batch", 0]}]},
         ]}}}]}
@@ -1457,20 +1547,20 @@ def qc_overview(user=Depends(current_user)):
         raise HTTPException(status_code=403, detail="QC reviewer required")
     collection = order_store()
     statuses = {row["_id"]: row["count"] for row in collection.aggregate([
-        {"$match": {"status": {"$in": QC_VISIBLE_STEPS}}},
+        {"$match": {"status": {"$in": QC_VISIBLE_STEPS + ["issue_raised"]}, **issue_stage_scope(QC_VISIBLE_STEPS)}},
         {"$group": {"_id": "$status", "count": {"$sum": 1}}},
     ])}
     resolved = collection.count_documents({"status": "manufactured", "$expr": resolved_qc_expression()})
     clinics = [{"id": row["_id"], "name": row["name"]}
                for row in collection.aggregate([
-                   {"$match": {"status": {"$in": QC_VISIBLE_STEPS},
+                   {"$match": {"status": {"$in": QC_VISIBLE_STEPS + ["issue_raised"]}, **issue_stage_scope(QC_VISIBLE_STEPS),
                                "clinic_id": {"$ne": None}}},
                    {"$group": {"_id": "$clinic_id", "name": {"$first": "$clinic.name"}}},
                    {"$sort": {"name": 1}},
                ])]
     return {"all_orders": sum(statuses.values()),
             "qc_approval_pending": statuses.get("manufactured", 0) - resolved,
-            "qc_issue_raised": statuses.get("qc_issues", 0),
+            "qc_issue_raised": statuses.get("qc_issues", 0) + statuses.get("issue_raised", 0),
             "qc_issue_resolved": resolved,
             "qc_approval_completed": statuses.get("qc_approved", 0) +
                                   statuses.get("manufacture_completed", 0),
@@ -1660,33 +1750,37 @@ def add_issue(order_id: str, body: IssueInput, user=Depends(current_user)):
     doc = workflow_view(order, body.batch_number)
     if not body.text.strip():
         raise HTTPException(422, "Describe the issue before submitting")
-    if doc["status"] == "cancelled":
-        raise HTTPException(status_code=409, detail="Order is cancelled")
-    if doc["status"] in {"plan_completed", "clinician_issues"} and user["role"] in CLINICAL_REVIEW_ROLES:
-        source_status, issue_status, target_team = "plan_completed", "clinician_issues", "planning"
-    elif user["role"] in QC_REVIEW_ROLES:
-        source_status, issue_status, target_team = "manufactured", "qc_issues", "production"
-    elif user["role"] in CLINICAL_REVIEW_ROLES:
-        raise HTTPException(status_code=409, detail="Clinical feedback requires a completed plan")
-    else:
-        raise HTTPException(status_code=403, detail="This team cannot raise an issue")
-    if body.raised_to != target_team or doc["status"] not in {source_status, issue_status}:
-        raise HTTPException(status_code=409, detail="Issue cannot be raised at this order stage or for this team")
+    if doc["status"] not in ORDER_STEPS[:-1] + SCANNER_STEPS + [DOCUMENT_REVIEW, "issue_raised"]:
+        raise HTTPException(409, "Only active cases can receive issues")
+    target_team = None if user["role"] in CLINIC_ROLES else body.raised_to
+    if target_team == user["role"]:
+        raise HTTPException(422, "Choose a recipient outside your own team")
+    if user["role"] not in CLINIC_ROLES and target_team is None:
+        raise HTTPException(422, "Choose the team or clinician responsible")
+    if target_team == "clinician" and not order.get("clinician_id"):
+        raise HTTPException(422, "This case has no assigned clinician")
     timestamp = now()
     issue_id = str(ObjectId())
     source_status = doc["status"]
-    guard = {"order_id": order_id, "status": source_status}
+    issue_status = "issue_raised"
+    open_issue = next((item for item in doc.get("issues", []) if not item.get("resolved_at") and item.get("resume_status")), {})
+    resume_status = open_issue.get("resume_status") or {
+        "clinician_issues": "plan_completed", "qc_issues": "manufactured"
+    }.get(source_status, source_status)
+    guard = {"order_id": order_id, "status": source_status, "issue_revision": order.get("issue_revision")}
     fields = {"status": issue_status}
     batch_transition(order, body.batch_number, issue_status, fields, guard)
     events = {"issues": {"id": issue_id, "text": body.text.strip(), "at": timestamp, "by": user["name"],
-                         "raised_by_id": user.get("id"), "raised_to": target_team,
+                         "raised_by_id": user.get("id"), "raised_by_role": user["role"], "raised_to": target_team,
+                         "assigned_by": user["name"] if target_team else None,
+                         "resume_status": resume_status,
                          "resolved_at": None, "batch_number": body.batch_number}}
     if source_status != issue_status:
         events["history"] = {"status": issue_status, "at": timestamp, "by": user["name"]}
     updated = order_store().find_one_and_update(
         guard, audited_update({"$push": events, "$set": fields, "$inc": {"issue_revision": 1}},
          "Issue raised", user, timestamp, batch_number=body.batch_number,
-         issue_id=issue_id, from_status=source_status, to_status=issue_status),
+         issue_id=issue_id, raised_to=target_team, from_status=source_status, to_status=issue_status),
         return_document=ReturnDocument.AFTER)
     if updated is None:
         raise HTTPException(status_code=409, detail="Order changed; reload and try again")
@@ -1734,31 +1828,58 @@ def mark_issue_read(order_id: str, issue_id: str, body: IssueRead, user=Depends(
     return {"read_through": position}
 
 
+@app.post("/api/orders/{order_id}/issues/{issue_id}/assign")
+def assign_issue(order_id: str, issue_id: str, body: IssueAssignment, user=Depends(current_user)):
+    if user["role"] not in {"marketing", "admin"}:
+        raise HTTPException(403, "Marketing or Admin assigns clinician issues")
+    order = get_order(order_id, user)
+    if body.raised_to == "clinician" and not order.get("clinician_id"):
+        raise HTTPException(422, "This case has no assigned clinician")
+    timestamp = now()
+    updated = order_store().find_one_and_update(
+        {"order_id": order_id, "issues": {"$elemMatch": {"id": issue_id, "resolved_at": None, "raised_to": None}}},
+        audited_update({"$set": {"issues.$.raised_to": body.raised_to, "issues.$.assigned_by": user["name"]},
+                        "$inc": {"issue_revision": 1}}, "Issue assigned", user, timestamp,
+                       issue_id=issue_id, raised_to=body.raised_to), return_document=ReturnDocument.AFTER)
+    if updated is None:
+        raise HTTPException(409, "Issue is no longer awaiting assignment")
+    return {"order": public_order(updated, user)}
+
+
 @app.post("/api/orders/{order_id}/issues/{issue_id}/resolve")
-def resolve_issue(order_id: str, issue_id: str, user=Depends(current_user)):
+def resolve_issue(order_id: str, issue_id: str, user=Depends(current_user), body: IssueResolution | None = None):
     doc = get_order(order_id, user)
     issue = next((item for item in doc["issues"] if item["id"] == issue_id), None)
     if issue is None:
         raise HTTPException(status_code=404, detail="Issue not found")
     order = doc
     doc = workflow_view(order, issue.get("batch_number"))
-    target_team = issue["raised_to"]
-    if target_team in {"cad", "planning"} and doc.get("assigned_planner") and (doc.get("assigned_planner") or {}).get("id") != user["id"]:
-        raise HTTPException(status_code=403, detail="Only the assigned planner can resolve feedback")
-    canonical_team = {"lab": "production", "cad": "planning"}.get(target_team, target_team)
-    issue_status = "qc_issues" if canonical_team == "production" else "clinician_issues"
-    return_status = "manufactured" if canonical_team == "production" else "plan_completed"
-    if user["role"] != canonical_team and not (canonical_team in {"planning", "production"} and user["role"] == "admin"):
-        raise HTTPException(status_code=403, detail="Issue belongs to another team")
-    if doc["status"] != issue_status or issue["resolved_at"] is not None:
-        raise HTTPException(status_code=409, detail="Issue is not open for resolution")
+    if not can_resolve_issue(order, issue, user):
+        raise HTTPException(403, "Only the assigned recipient can resolve this issue")
+    if issue.get("resume_status") and body is None:
+        raise HTTPException(422, "Indicate whether the plan requires revision")
+    issue_status = doc["status"]
+    if issue_status not in {"issue_raised", "qc_issues", "clinician_issues"} or issue.get("resolved_at") is not None:
+        raise HTTPException(409, "Issue is not open for resolution")
+    revision = bool(body and body.requires_plan_revision)
+    revise_plan = revision or doc.get("issue_revision_requested", False)
+    return_status = issue.get("resume_status") or ("manufactured" if issue.get("raised_to") in {"lab", "production"}
+                                                  else "plan_completed")
+    if revise_plan and return_status not in SCANNER_STEPS + [DOCUMENT_REVIEW, "submitted"]:
+        return_status = "planning_in_progress" if order.get("assigned_planner") or order.get("batches") else "submitted"
     timestamp = now()
     remaining = [item for item in doc["issues"] if item["id"] != issue_id and item["resolved_at"] is None]
-    update = {"$set": {"issues.$.resolved_at": timestamp, "updated_at": timestamp}, "$inc": {"issue_revision": 1}}
+    update = {
+        "$set": {"issues.$.resolved_at": timestamp, "issues.$.resolved_by": user["name"],
+                 "issues.$.requires_plan_revision": revision, "issue_revision_requested": bool(remaining and revise_plan)},
+        "$inc": {"issue_revision": 1},
+    }
     if not remaining:
         update["$set"]["status"] = return_status
+        if revise_plan:
+            update["$set"]["revision_approval_required"] = True
         update["$push"] = {"history": {"status": return_status, "at": timestamp, "by": user["name"]}}
-    details = {"issue_id": issue_id}
+    details = {"issue_id": issue_id, "batch_number": issue.get("batch_number"), "requires_plan_revision": revision}
     if not remaining:
         details.update(from_status=issue_status, to_status=return_status)
     guard = {"order_id": order_id, "status": issue_status, "issue_revision": order.get("issue_revision"),
@@ -1877,6 +1998,8 @@ def admin_assign_order(order_id: str, body: AdminAssignment, admin=Depends(admin
 def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
     order = get_order(order_id, user)
     doc = workflow_view(order, body.batch_number)
+    if any(issue.get("resolved_at") is None for issue in order.get("issues", [])):
+        raise HTTPException(409, "Resolve all open issues before advancing this order")
     target = body.status
     if target == "plan_completed" and doc["status"] == "planning_in_progress" and (doc.get("assigned_planner") or {}).get("id") != user["id"]:
         raise HTTPException(status_code=403, detail="Only the assigned planner can complete the plan")
@@ -1912,7 +2035,7 @@ def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
         if target == "qc_approved" and any(issue["resolved_at"] is None for issue in doc["issues"]):
             raise HTTPException(status_code=409, detail="Resolve QC issues before approval")
     timestamp = now()
-    guard = {"order_id": order_id, "status": doc["status"]}
+    guard = {"order_id": order_id, "status": doc["status"], "issue_revision": order.get("issue_revision")}
     if target == "plan_completed" and doc["status"] == "planning_in_progress":
         guard["assigned_planner.id"] = user["id"]
     update_fields = {"status": target, "updated_at": timestamp}
@@ -1922,6 +2045,10 @@ def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
             if body.aligner_quantity is None:
                 raise HTTPException(422, "Enter the required aligner quantity")
             update_fields["aligner_quantity"] = body.aligner_quantity
+    if target == "clinician_approved" and doc.get("revision_approval_required"):
+        if not case_clinician(order, user):
+            raise HTTPException(403, "The case clinician must approve the revised plan")
+        update_fields["revision_approval_required"] = False
     if target == "clinician_approved" and not order.get("batches"):
         total = doc.get("aligner_quantity")
         if total and not body.dispatch_mode:

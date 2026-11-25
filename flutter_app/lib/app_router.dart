@@ -193,6 +193,8 @@ class AppRouter extends RouterDelegate<AppRoutePath>
       'production' => ['/production/orders', '/production/qc'],
       _ => ['/scanner/orders'],
     };
+    final issuePath = '${allowedPrefix}issues';
+    validSections.add(issuePath);
     final safeSection =
         validSections.contains(sectionPath) ? sectionPath : baseFor(role);
     final orderId = orderIndex >= 0 &&
@@ -200,7 +202,15 @@ class AppRouter extends RouterDelegate<AppRoutePath>
             validSections.contains(sectionPath)
         ? Uri.decodeComponent(parts[orderIndex + 1])
         : null;
-    final workspace = switch (role) {
+    final workspace = safeSection == issuePath
+        ? Scaffold(
+            appBar: AppBar(title: const Text('Issue queue'), leading: IconButton(
+                tooltip: 'Back to workspace', icon: const Icon(Icons.arrow_back),
+                onPressed: () => go(baseFor(role)))),
+            body: SafeArea(child: Padding(padding: const EdgeInsets.all(16),
+              child: OrdersPage(api: api, user: user!, clinics: const [],
+                  dashboardFilters: const {'issue_queue': 'true'}))))
+        : switch (role) {
       'admin' => AdminWorkspace(
           api: api,
           user: user!,
@@ -240,7 +250,11 @@ class AppRouter extends RouterDelegate<AppRoutePath>
     return Navigator(
       key: navigatorKey,
       pages: [
-        MaterialPage<void>(key: ValueKey(safeSection), child: workspace),
+        MaterialPage<void>(key: ValueKey(safeSection), child: safeSection == issuePath ? workspace :
+          Scaffold(body: workspace, bottomNavigationBar: SafeArea(
+            child: Align(heightFactor: 1, alignment: Alignment.centerRight, child: TextButton.icon(
+              onPressed: () => go(issuePath), icon: const Icon(Icons.assignment_outlined),
+              label: const Text('Issue queue')))))),
         if (orderId != null)
           MaterialPage<void>(
               key: ValueKey('order:$orderId'),
@@ -252,6 +266,7 @@ class AppRouter extends RouterDelegate<AppRoutePath>
                           (role == 'planning' && safeSection != '/planning/qc')
                       ? user!['id'] as int
                       : null,
+                  openIssues: safeSection == issuePath,
                   qcMode: parts.last == 'qc')),
       ],
       onDidRemovePage: (page) {

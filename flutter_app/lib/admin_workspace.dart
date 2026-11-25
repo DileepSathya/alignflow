@@ -672,6 +672,7 @@ class _AdminOrdersViewState extends State<AdminOrdersView> {
                             DropdownMenuItem(
                                 value: 'plan_completed',
                                 child: Text('Clinician review pending')),
+                            DropdownMenuItem(value: 'issue_raised', child: Text('Issue Raised')),
                             DropdownMenuItem(
                                 value: 'clinician_issues',
                                 child: Text('Clinical issues')),
