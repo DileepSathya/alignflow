@@ -587,7 +587,8 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
             .map((entry) => entry.key)
             .firstOrNull;
         await widget.api
-            .uploadOrderFile(createdOrderId!, attachments[index], checklistId: checklistId);
+            .uploadOrderFile(createdOrderId!, attachments[index],
+                checklistId: checklistId, category: 'scan');
         uploadedCount++;
       }
       if (sendForReview) {
@@ -777,7 +778,8 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
     'patient',
     'clinic',
     'required_items',
-    'documents',
+    'scan_documents',
+    'plan_documents',
     'comments',
     'issues',
   };
@@ -942,18 +944,24 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
     });
   }
 
-  Future<void> addFiles() async {
-    final selection = await FilePicker.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'stl']);
-    if (selection.isEmpty) return;
-    setState(() => busy = true);
+  Future<void> addFiles(String category) async {
+    setState(() {
+      busy = true;
+      error = null;
+    });
+    var uploaded = false;
     try {
+      final selection = await FilePicker.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'stl']);
       for (final file in selection) {
-        await widget.api.uploadOrderFile(widget.orderId, file);
+        if (!mounted) return;
+        await widget.api.uploadOrderFile(widget.orderId, file, category: category);
+        uploaded = true;
       }
-      await refresh();
+      if (uploaded && mounted) await refresh();
     } catch (e) {
+      if (uploaded && mounted) await refresh();
       if (mounted) setState(() => error = e.toString());
     } finally {
       if (mounted) setState(() => busy = false);
@@ -1140,14 +1148,15 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
             child: const Text('Resolve'),
           ) : null,
         ),
-        issueDiscussion(item, data['documents'] as List),
+        issueDiscussion(item, data),
         ]),
       ),
     ]);
   }
 
-  Widget issueDiscussion(Map issue, List documents) {
+  Widget issueDiscussion(Map issue, Map data) {
     final id = issue['id'] as String;
+    final documents = (data['documents'] as List).cast<Map>();
     final attachments = documents.where((doc) => doc['issue_id'] == id).toList();
     final replies = issue['replies'] as List? ?? const [];
     final draft = replyDrafts.putIfAbsent(id, () => TextEditingController());
@@ -1160,8 +1169,9 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
         ListTile(
           leading: const Icon(Icons.attach_file),
           title: Text(file['name'] as String),
-          trailing: const Icon(Icons.download_outlined),
-          onTap: () => downloadFile(file as Map),
+          trailing: documentDeleteButton(data, file) ??
+              const Icon(Icons.download_outlined),
+          onTap: () => downloadFile(file),
         ),
       const SizedBox(height: 8),
       ],
@@ -1410,6 +1420,79 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
     );
   }
 
+  Widget documentPanel(Map<String, dynamic> data, String category) {
+    final isScan = category == 'scan';
+    final title = isScan ? 'Scan Documents' : 'Plan Documents';
+    final documents = (data['documents'] as List).cast<Map>().where((document) {
+      final assignedCategory = document['category'];
+      return (document['issue_id'] as String? ?? '').isEmpty &&
+          (assignedCategory == category || (isScan && assignedCategory == null));
+    }).toList();
+    return panel(
+      '$title (${documents.length})',
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final document in documents) documentTile(data, document),
+          if (data['status'] != 'cancelled')
+            OutlinedButton.icon(
+              onPressed: busy ? null : () => addFiles(category),
+              icon: const Icon(Icons.upload_file),
+              label: Text(isScan ? 'Add scan documents' : 'Add plan documents'),
+            ),
+        ],
+      ),
+      section: '${category}_documents',
+    );
+  }
+
+  Widget documentTile(Map<String, dynamic> data, Map document) {
+    final unclassified = document['category'] == null;
+    final path = '/api/orders/${widget.orderId}/documents/${document['id']}';
+    return ListTile(
+      title: Text(document['name'] as String),
+      subtitle: Text('Uploaded by ${document['by']} (${document['role']})'
+          '${unclassified ? ' • Needs classification' : ''}'),
+      onTap: () => downloadFile(document),
+      trailing: unclassified && widget.role == 'admin'
+          ? PopupMenuButton<String>(
+              enabled: !busy,
+              tooltip: 'Classify document',
+              onSelected: (category) =>
+                  action('PATCH', '$path/category', {'category': category}),
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: 'scan', child: Text('Assign to Scan Documents')),
+                PopupMenuItem(value: 'plan', child: Text('Assign to Plan Documents')),
+              ],
+            )
+          : documentDeleteButton(data, document),
+    );
+  }
+
+  Widget? documentDeleteButton(Map data, Map document) {
+    final canDelete = !['admin', 'clinician'].contains(widget.role) &&
+        document['role'] == widget.role &&
+        (document['checklist_id'] == null || document['checklist_id'] == '') &&
+        !(data['checklist'] as List? ?? []).any(
+            (item) => (item['document_ids'] as List).contains(document['id']));
+    if (!canDelete) return null;
+    return IconButton(
+      tooltip: 'Delete',
+      icon: const Icon(Icons.delete_outline),
+      onPressed: busy
+          ? null
+          : () async {
+              try {
+                await widget.api.request('DELETE',
+                    '/api/orders/${widget.orderId}/documents/${document['id']}');
+                await refresh();
+              } catch (e) {
+                if (mounted) setState(() => error = e.toString());
+              }
+            },
+    );
+  }
+
   Widget panel(String title, Widget child, {String? section}) => Card(
       child: Padding(
           padding: const EdgeInsets.all(16),
@@ -1614,50 +1697,8 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
                           role: widget.role,
                           onChanged: refresh),
                       section: 'required_items'),
-                panel(
-                    'Documents (${(data['documents'] as List).length})',
-                    Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          for (final document in data['documents'] as List)
-                            ListTile(
-                                title: Text(document['name'] as String),
-                                subtitle: Text(
-                                    'Uploaded by ${document['by']} (${document['role']})'),
-                                onTap: () => downloadFile(document as Map),
-                                trailing: !['admin', 'clinician']
-                                            .contains(widget.role) &&
-                                        document['role'] == widget.role &&
-                                        (document['checklist_id'] == null ||
-                                            document['checklist_id'] == '') &&
-                                        !(data['checklist'] as List? ?? []).any(
-                                            (item) =>
-                                                (item['document_ids'] as List)
-                                                    .contains(document['id']))
-                                    ? IconButton(
-                                        tooltip: 'Delete',
-                                        icon: const Icon(Icons.delete_outline),
-                                        onPressed: busy
-                                            ? null
-                                            : () async {
-                                                try {
-                                                  await widget.api.request(
-                                                      'DELETE',
-                                                      '/api/orders/${widget.orderId}/documents/${document['id']}');
-                                                  await refresh();
-                                                } catch (e) {
-                                                  if (mounted)
-                                                    setState(() =>
-                                                        error = e.toString());
-                                                }
-                                              })
-                                    : null),
-                          if (data['status'] != 'cancelled')
-                            OutlinedButton.icon(
-                                onPressed: busy ? null : addFiles,
-                                icon: const Icon(Icons.upload_file),
-                                label: const Text('Add documents')),
-                        ]), section: 'documents'),
+                documentPanel(data, 'scan'),
+                documentPanel(data, 'plan'),
                 panel(
                     'Comments (${(data['comments'] as List).length})',
                     Column(

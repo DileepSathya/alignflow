@@ -168,6 +168,7 @@ class ScannerTests(unittest.TestCase):
             order = attach(ADMIN)['order']
             self.assertEqual(len(order['documents']), 1)
             self.assertEqual(order['documents'][0]['issue_id'], order['issues'][0]['id'])
+            self.assertEqual(order['documents'][0]['category'], 'issue')
             files = [p for p in Path(directory).rglob('*') if p.is_file()]
             self.assertEqual([p.read_bytes() for p in files], [b'solid tray'])
 
@@ -184,9 +185,41 @@ class ScannerTests(unittest.TestCase):
         selection = main.ChecklistInput(document_ids=[document['id']])
         result = main.update_checklist(order_id, 'upper_arch', selection, user=ADMIN)['order']
         self.assertEqual(result['checklist'][0]['document_ids'], [document['id']])
+        self.assertEqual(result['documents'][0]['category'], 'scan')
         self.assert_status(403, main.update_checklist, order_id, 'upper_arch',
                            main.ChecklistInput(verified=True), user=ADMIN)
         self.assert_status(409, main.submit_documents, order_id, user=ADMIN)
+
+    def test_uploaded_plan_cannot_be_used_in_scan_checklist(self):
+        order_id = self.doc['order_id']
+        self.store.update_one.side_effect = lambda guard, change: SimpleNamespace(
+            matched_count=int(self.update(guard, change) is not None))
+        upload = UploadFile(filename='plan.stl', file=io.BytesIO(b'solid plan'),
+                            headers=Headers({'content-type': 'application/octet-stream'}))
+        with tempfile.TemporaryDirectory() as directory, patch.object(main.settings, 'data_dir', Path(directory)):
+            result = asyncio.run(main.upload_order_document(order_id, upload, user=ADMIN, category='plan'))
+        document = result['order']['documents'][0]
+        self.assertEqual(document['category'], 'plan')
+        self.assert_status(422, main.update_checklist, order_id, 'upper_arch',
+                           main.ChecklistInput(document_ids=[document['id']]), user=ADMIN)
+
+    def test_admin_can_classify_an_unlinked_legacy_document(self):
+        order_id = self.doc['order_id']
+        self.doc['documents'] = [{'id': 'legacy', 'name': 'legacy.pdf'},
+                                 {'id': 'scan', 'name': 'scan.stl'}]
+        self.doc['scanner_history'] = [{'details': {'checklist': [{'document_ids': ['scan']}]}}]
+        body = main.DocumentCategoryInput(category='plan')
+        self.assert_status(403, main.classify_order_document, order_id, 'legacy', body, user=SCANNER)
+        self.assert_status(409, main.classify_order_document, order_id, 'scan', body, user=ADMIN)
+
+        def classify(guard, update):
+            self.assertEqual(guard['documents.id'], 'legacy')
+            self.doc['documents'][0]['category'] = update['$set']['documents.$.category']
+            return SimpleNamespace(matched_count=1)
+
+        self.store.update_one.side_effect = classify
+        result = main.classify_order_document(order_id, 'legacy', body, user=ADMIN)
+        self.assertEqual([file['category'] for file in result['order']['documents']], ['plan', 'scan'])
 
     def test_admin_can_submit_and_approve_complete_documents(self):
         order_id = self.doc['order_id']

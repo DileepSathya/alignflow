@@ -791,10 +791,26 @@ def new_checklist():
 new_checklist()  # Fail early for invalid developer configuration.
 
 
+def checklist_document_ids(doc):
+    previous_items = [item for event in doc.get("scanner_history", [])
+                      for item in event.get("details", {}).get("checklist", [])]
+    return {document_id for item in doc.get("checklist", []) + previous_items
+            for document_id in item.get("document_ids", [])}
+
+
+def document_category(document, linked_ids):
+    if document.get("issue_id"):
+        return "issue"
+    if document.get("checklist_id") or document["id"] in linked_ids:
+        return "scan"
+    return document.get("category")
+
+
 def item_ready(item, doc):
     documents = {d["id"]: d for d in doc.get("documents", [])}
     selected = set(item.get("document_ids", []))
     valid = [documents[key] for key in selected if key in documents and
+             documents[key].get("category") != "plan" and
              Path(documents[key]["name"]).suffix.lower() in item["extensions"]]
     return (item["allow_text"] and bool(item.get("text", "").strip())) or len(valid) >= item["min_files"]
 
@@ -882,7 +898,9 @@ def update_checklist(order_id: str, item_id: str, body: ChecklistInput, user=Dep
         if body.verified and user["role"] != "scanner":
             raise HTTPException(status_code=403, detail="Only Scanner can verify items")
         docs = {d["id"]: d for d in doc["documents"]}
-        if any(key not in docs or Path(docs[key]["name"]).suffix.lower() not in item["extensions"]
+        if any(key not in docs or docs[key].get("category") == "plan" or
+               (docs[key].get("issue_id") and key not in item["document_ids"]) or
+               Path(docs[key]["name"]).suffix.lower() not in item["extensions"]
                for key in body.document_ids):
             raise HTTPException(status_code=422, detail="Select valid files from this order")
         text = item["text"] if user["role"] == "admin" else body.text.strip()
@@ -986,8 +1004,12 @@ def public_order(doc, user=None):
         result["issues"].append({**issue, "number": number, "unread": unread})
     result["id"] = str(doc["_id"])
     result["planner_assignment_open"] = doc.get("status") in PLANNER_ASSIGNMENT_STEPS
-    result["documents"] = [{k: v for k, v in item.items() if k != "storage_key"}
-                           for item in doc.get("documents", [])]
+    linked_ids = checklist_document_ids(doc)
+    result["documents"] = [
+        {**{k: v for k, v in item.items() if k != "storage_key"},
+         "category": document_category(item, linked_ids)}
+        for item in doc.get("documents", [])
+    ]
     for key in ("created_at", "updated_at"):
         if result.get(key):
             result[key] = result[key].isoformat() + "Z" if result[key].tzinfo is None else result[key].isoformat()
@@ -1926,7 +1948,8 @@ def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
 
 @app.post("/api/orders/{order_id}/documents", status_code=201)
 async def upload_order_document(order_id: str, file: UploadFile = File(...), user=Depends(current_user),
-                                checklist_id: str = Form(""), issue_id: str = Form("")):
+                                checklist_id: str = Form(""), issue_id: str = Form(""),
+                                category: str = Form("")):
     doc = get_order(order_id, user)
     if doc["status"] == "cancelled":
         raise HTTPException(status_code=409, detail="Order is cancelled")
@@ -1942,6 +1965,11 @@ async def upload_order_document(order_id: str, file: UploadFile = File(...), use
         issue_id = ""
     if not isinstance(checklist_id, str):
         checklist_id = ""
+    if not isinstance(category, str):
+        category = ""
+    if (category not in {"", "scan", "plan"} or (category and issue_id) or
+            (category == "plan" and checklist_id)):
+        raise HTTPException(status_code=400, detail="Document category does not match this upload")
     if checklist_id:
         if not can_prepare_documents(doc, user) or doc["status"] not in SCANNER_STEPS:
             raise HTTPException(status_code=403, detail="Checklist uploads require an editable case and a document preparer")
@@ -1959,6 +1987,8 @@ async def upload_order_document(order_id: str, file: UploadFile = File(...), use
     meta = {"id": str(ObjectId()), "storage_key": key, "name": filename,
             "size": size, "sha256": checksum, "content_type": file.content_type,
             "at": now(), "by": user["name"], "role": user["role"], "checklist_id": checklist_id}
+    if checklist_id or category:
+        meta["category"] = "scan" if checklist_id else category
     if issue_id:
         meta["issue_id"] = issue_id
         if any(d.get("issue_id") == issue_id and d["name"] == filename and d.get("sha256") == checksum
@@ -2007,6 +2037,33 @@ def download_order_document(order_id: str, document_id: str, user=Depends(curren
         "Content-Disposition": "attachment; filename*=UTF-8''" + quote(meta["name"])})
 
 
+class DocumentCategoryInput(BaseModel):
+    category: str
+
+
+@app.patch("/api/orders/{order_id}/documents/{document_id}/category")
+def classify_order_document(order_id: str, document_id: str, body: DocumentCategoryInput,
+                            user=Depends(current_user)):
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can classify existing documents")
+    if body.category not in {"scan", "plan"}:
+        raise HTTPException(status_code=422, detail="Choose Scan Documents or Plan Documents")
+    doc = get_order(order_id, user)
+    meta = next((item for item in doc.get("documents", []) if item["id"] == document_id), None)
+    if meta is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if document_category(meta, checklist_document_ids(doc)) is not None:
+        raise HTTPException(status_code=409, detail="Only unclassified documents can be assigned")
+    result = order_store().update_one(
+        {"order_id": order_id, "documents.id": document_id,
+         "updated_at": doc["updated_at"], "review_revision": doc.get("review_revision")},
+        audited_update({"$set": {"documents.$.category": body.category}},
+                       "Document classified", user, now(), document=meta["name"], category=body.category))
+    if result.matched_count != 1:
+        raise HTTPException(status_code=409, detail="Order changed; reload and try again")
+    return order_detail(order_id, user)
+
+
 @app.delete("/api/orders/{order_id}/documents/{document_id}", status_code=204)
 def delete_order_document(order_id: str, document_id: str, user=Depends(current_user)):
     doc = get_order(order_id, user)
@@ -2015,10 +2072,7 @@ def delete_order_document(order_id: str, document_id: str, user=Depends(current_
         raise HTTPException(status_code=404, detail="Document not found")
     if user["role"] != meta["role"] and user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Only the uploading team can delete this document")
-    previous_items = [item for event in doc.get("scanner_history", [])
-                      for item in event.get("details", {}).get("checklist", [])]
-    if meta.get("checklist_id") or any(document_id in i.get("document_ids", [])
-                                      for i in doc.get("checklist", []) + previous_items):
+    if meta.get("checklist_id") or document_id in checklist_document_ids(doc):
         raise HTTPException(status_code=409, detail="Checklist files are retained as history; update selected files instead")
     result = order_store().update_one({"order_id": order_id, "documents.id": document_id,
                                       "updated_at": doc["updated_at"], "review_revision": doc.get("review_revision")},

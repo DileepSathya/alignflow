@@ -122,7 +122,7 @@ class Api {
 
   Future<Map<String, dynamic>> uploadOrderFile(
       String orderId, PlatformFile file,
-      {String? checklistId, String? issueId}) async {
+      {String? checklistId, String? issueId, String? category}) async {
     if ((await file.length() ?? 0) > 20 * 1024 * 1024) {
       throw ApiException('File exceeds 20 MB.');
     }
@@ -132,6 +132,7 @@ class Api {
     if (token != null) request.headers['Authorization'] = 'Bearer $token';
     if (checklistId != null) request.fields['checklist_id'] = checklistId;
     if (issueId != null) request.fields['issue_id'] = issueId;
+    if (category != null) request.fields['category'] = category;
     request.files
         .add(http.MultipartFile.fromBytes('file', bytes, filename: file.name));
     try {

@@ -11,6 +11,7 @@ class _IssueApi extends Api {
   int unread = 0;
   String? postedPath;
   String? reply;
+  List<Map<String, dynamic>> orderDocuments = [];
 
   @override
   Future<Map<String, dynamic>> request(String method, String path,
@@ -24,6 +25,10 @@ class _IssueApi extends Api {
     if (method == 'POST') {
       postedPath = path;
       reply = data!['text'] as String;
+    }
+    if (method == 'PATCH' && path == '/api/orders/ORD-1/documents/legacy/category') {
+      orderDocuments.singleWhere((file) => file['id'] == 'legacy')['category'] =
+          data!['category'];
     }
     return {
       'order': {
@@ -42,6 +47,7 @@ class _IssueApi extends Api {
           ]},
         ],
         'documents': [
+          ...orderDocuments,
           if (reads > 1) {'id': 'pdf', 'issue_id': 'a', 'name': 'Scan.pdf'},
         ],
       },
@@ -50,6 +56,37 @@ class _IssueApi extends Api {
 }
 
 void main() {
+  testWidgets('document panels show separate counts and admins can classify legacy files', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 2400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final api = _IssueApi()
+      ..orderDocuments = [
+        {'id': 'scan', 'name': 'Upper.stl', 'category': 'scan'},
+        {'id': 'plan', 'name': 'Treatment.pdf', 'category': 'plan'},
+        {'id': 'legacy', 'name': 'Earlier.pdf'},
+        {'id': 'issue', 'name': 'Screenshot.png', 'issue_id': 'a'},
+      ];
+    await tester.pumpWidget(MaterialApp(
+      home: OrderDetailPage(api: api, orderId: 'ORD-1', role: 'admin'),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Scan Documents (2)'));
+    await tester.tap(find.text('Plan Documents (1)'));
+    await tester.pumpAndSettle();
+    expect(find.text('Add scan documents'), findsOneWidget);
+    expect(find.text('Add plan documents'), findsOneWidget);
+    expect(find.textContaining('Needs classification'), findsOneWidget);
+    expect(find.text('Screenshot.png'), findsNothing);
+    await tester.tap(find.byTooltip('Classify document'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Assign to Plan Documents'));
+    await tester.pumpAndSettle();
+    expect(find.text('Scan Documents (1)'), findsOneWidget);
+    expect(find.text('Plan Documents (2)'), findsOneWidget);
+    expect(find.textContaining('Needs classification'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('opening issues refreshes attachments and replies target the selected issue', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 2400));
     addTearDown(() => tester.binding.setSurfaceSize(null));

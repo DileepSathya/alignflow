@@ -94,6 +94,8 @@ class _ScannerChecklistState extends State<ScannerChecklist> {
     final selected = Set<String>.from(item['document_ids'] as List);
     var text = item['text'] as String? ?? '';
     final docs = (widget.order['documents'] as List)
+        .where((d) => d['category'] != 'plan' &&
+            (d['category'] != 'issue' || selected.contains(d['id'])))
         .where((d) => (item['extensions'] as List).any((ext) =>
             (d['name'] as String).toLowerCase().endsWith(ext as String)))
         .toList();
@@ -112,7 +114,7 @@ class _ScannerChecklistState extends State<ScannerChecklist> {
                                   'Select at least ${item['min_files']} file(s). Earlier uploads remain available.'),
                               if (docs.isEmpty && widget.role == 'admin')
                                 const Text(
-                                    'Add compatible files in Documents first.'),
+                                    'Add compatible files in Scan Documents first.'),
                               for (final doc in docs)
                                 CheckboxListTile(
                                     value: selected.contains(doc['id']),
@@ -173,7 +175,7 @@ class _ScannerChecklistState extends State<ScannerChecklist> {
                       style: Theme.of(context).textTheme.titleLarge),
                   if (canEdit)
                     const Text(
-                        'Upload files in Documents, map them to the checklist, then submit for planner review.'),
+                        'Upload files in Scan Documents, map them to the checklist, then submit for planner review.'),
                   if (reviewing)
                     const Text(
                         'Review the mapped files. Select any items that need correction.'),
