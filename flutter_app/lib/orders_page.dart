@@ -1376,7 +1376,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                         ])),
                             ]))),
                 panel(
-                    'Patient',
+                    'patient & Casenotes',
                     Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1388,6 +1388,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                               'Mobile: ${data['patient_mobile_number'] ?? '—'}'),
                           Text('Email: ${data['patient_email'] ?? '—'}'),
                           Text('Age: ${data['age'] ?? '—'}'),
+                          const Divider(height: 16, thickness: 1),
                           Text('Case notes: ${data['notes'] ?? ''}'),
                           if (widget.role == 'marketing')
                             TextButton.icon(
