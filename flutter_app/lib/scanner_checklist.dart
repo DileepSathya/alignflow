@@ -39,6 +39,16 @@ class _ScannerChecklistState extends State<ScannerChecklist> {
       (item['allow_text'] == true &&
           (item['text'] as String).trim().isNotEmpty);
 
+  bool needsCorrection(Map item, Map? request) {
+    final previous = request?['mappings']?[item['id']];
+    if (previous == null) return false;
+    final files = List<String>.from(item['document_ids'] as List)..sort();
+    final oldFiles = List<String>.from(previous['files'] as List)..sort();
+    return files.toString() == oldFiles.toString() &&
+        item['text'] == previous['text'] &&
+        item['waiver'].toString() == previous['waiver'].toString();
+  }
+
   Future<void> run(Future<void> Function() task) async {
     setState(() {
       busy = true;
@@ -213,6 +223,9 @@ class _ScannerChecklistState extends State<ScannerChecklist> {
                                                     .isNotEmpty)
                                             ? 'Mapped'
                                             : 'Missing'),
+                              if (needsCorrection(item as Map, request))
+                                const Text(' • Correction needed',
+                                    style: TextStyle(color: Colors.red)),
                               ]),
                               Text(
                                   '${(item['document_ids'] as List).length} / ${item['min_files']} files • ${(item['extensions'] as List).join(', ')}'),
@@ -249,7 +262,9 @@ class _ScannerChecklistState extends State<ScannerChecklist> {
                           onPressed: busy ||
                                   items.any((i) =>
                                       i['mandatory'] == true &&
-                                      !ready(i as Map))
+                                      !ready(i as Map)) ||
+                                  items.any((i) =>
+                                      needsCorrection(i as Map, request))
                               ? null
                               : () => run(() async {
                                     await widget.api.request(
