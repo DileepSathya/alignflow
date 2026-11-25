@@ -681,7 +681,7 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
                       controller: notes,
                       maxLines: 3,
                       decoration: const InputDecoration(
-                          labelText: 'Case notes (optional)')),
+                          labelText: 'Case notes/ Treatment Plan (optional)')),
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
                       onPressed: saving || createdOrderId != null ? null : pickFiles,
