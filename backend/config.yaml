@@ -32,25 +32,25 @@ scanner_checklist:
     allow_text: false
   - id: intraoral
     label: Intraoral photos (5)
-    mandatory: true
+    mandatory: false
     min_files: 5
     extensions: [.stl, .pdf, .jpg, .jpeg, .png]
     allow_text: false
   - id: extraoral
     label: Extraoral photos (3)
-    mandatory: true
+    mandatory: false
     min_files: 3
     extensions: [.stl, .pdf, .jpg, .jpeg, .png]
     allow_text: false
   - id: opg
     label: OPG X-ray
-    mandatory: true
+    mandatory: false
     min_files: 1
     extensions: [.stl, .pdf, .jpg, .jpeg, .png]
     allow_text: false
-  - id: requirements
-    label: Treatment requirements
-    mandatory: true
-    min_files: 1
-    extensions: [.stl, .pdf, .jpg, .jpeg, .png]
-    allow_text: true
+#  - id: requirements
+#    label: Treatment requirements
+#    mandatory: true
+#    min_files: 1
+#    extensions: [.stl, .pdf, .jpg, .jpeg, .png]
+#    allow_text: true
