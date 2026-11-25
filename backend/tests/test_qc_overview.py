@@ -62,7 +62,7 @@ class QcOverviewTests(unittest.TestCase):
                              user={"role": "planning"})
         self.assertEqual(orders.last_query["clinic_id"], 3)
         self.assertEqual(orders.last_query["status"], {"$in": ["manufactured"]})
-        self.assertEqual(orders.last_query["issues"]["$elemMatch"]["raised_to"], {"$in": ["production", "lab"]})
+        self.assertEqual(orders.last_query["$expr"], main.resolved_qc_expression())
 
     def test_other_roles_cannot_read_qc_overview(self):
         with self.assertRaises(HTTPException) as caught:

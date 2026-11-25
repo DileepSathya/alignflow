@@ -8,6 +8,7 @@ import 'demo_style.dart';
 import 'app_router.dart';
 
 const _statuses = <String, String>{
+  'upcoming': 'Upcoming',
   'scanner_review': 'Preparing documents',
   'scanner_missing': 'Document corrections requested',
   'planner_document_review': 'Planner document review',
@@ -26,6 +27,12 @@ const _statuses = <String, String>{
 
 String orderStatusLabel(Object? status) =>
     _statuses[status] ?? status?.toString() ?? '';
+
+String batchLabel(Map order, int number) {
+  final batches = order['batches'] as List;
+  final batch = batches[number - 1];
+  return 'Batch $number/${batches.length} · ${batch['quantity']} aligners · ${orderStatusLabel(batch['status'])}';
+}
 
 String assignedClinicianName(Map order) {
   final clinicianId = order['clinician_id'];
@@ -714,6 +721,8 @@ class OrderDetailPage extends StatefulWidget {
 }
 
 class _OrderDetailPageState extends State<OrderDetailPage> {
+  int? selectedBatch;
+  int? get batchNumber => selectedBatch ?? order?['current_batch'] as int?;
   Map<String, dynamic>? order;
   List<dynamic> planners = [];
   String? error;
@@ -776,14 +785,74 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
       error = null;
     });
     try {
+      if (path.endsWith('/status') && batchNumber != null) {
+        body = {...?body, 'batch_number': batchNumber};
+      }
       final result = await widget.api.request(method, path, body);
       if (mounted)
-        setState(() => order = result['order'] as Map<String, dynamic>);
+        setState(() {
+          order = result['order'] as Map<String, dynamic>;
+          selectedBatch = null;
+        });
     } catch (e) {
       if (mounted) setState(() => error = e.toString());
     } finally {
       if (mounted) setState(() => busy = false);
     }
+  }
+
+  Future<void> submitPlan() async {
+    int? quantity;
+    if (batchNumber == null) {
+      quantity = await showDialog<int>(context: context, builder: (context) =>
+        StatefulBuilder(builder: (context, update) => AlertDialog(
+          title: const Text('Required aligner quantity'),
+          content: TextField(autofocus: true, keyboardType: TextInputType.number,
+              onChanged: (value) => update(() => quantity = int.tryParse(value))),
+          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            FilledButton(onPressed: (quantity ?? 0) > 0 ? () => Navigator.pop(context, quantity) : null,
+                child: const Text('Submit plan'))])));
+      if (quantity == null || !mounted) return;
+    }
+    await action('POST', '/api/orders/${widget.orderId}/status',
+        {'status': 'plan_completed', if (quantity != null) 'aligner_quantity': quantity});
+  }
+
+  Future<void> approvePlan() async {
+    final total = order?['aligner_quantity'] as int?;
+    String mode = 'together';
+    int? count;
+    if (batchNumber == null && total != null) {
+      final confirmed = await showDialog<bool>(context: context, builder: (context) =>
+        StatefulBuilder(builder: (context, update) {
+          final n = count ?? 0;
+          final valid = n > 0 && n <= total;
+          return AlertDialog(title: const Text('Approve dispatch plan'),
+            content: SizedBox(width: 360, child: ListView(shrinkWrap: true, children: [
+              Text('$total aligners'),
+              DropdownButton<String>(value: mode, items: const [
+                DropdownMenuItem(value: 'together', child: Text('Dispatch all together')),
+                DropdownMenuItem(value: 'batches', child: Text('Dispatch in batches'))],
+                onChanged: (value) => update(() {
+                  mode = value!;
+                  count = null;
+                })),
+              if (mode == 'batches') ...[
+                TextField(keyboardType: TextInputType.number, decoration: InputDecoration(labelText: 'Number of batches (1–$total)'),
+                    onChanged: (value) => update(() => count = int.tryParse(value))),
+                if (valid)
+                  for (var i = 1; i <= n; i++)
+                    Text('Batch $i/$n · ${total ~/ n + (i == n ? total % n : 0)} aligners')
+              ]])),
+            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              FilledButton(onPressed: mode == 'together' || valid ? () => Navigator.pop(context, true) : null,
+                  child: const Text('Approve'))]);
+        }));
+      if (confirmed != true || !mounted) return;
+    }
+    await action('POST', '/api/orders/${widget.orderId}/status', {
+      'status': 'clinician_approved', if (batchNumber == null) 'dispatch_mode': mode,
+      if (mode == 'batches') 'batch_count': count});
   }
 
   Future<void> changeAssignment(int? userId, {bool requireReason = false}) async {
@@ -841,7 +910,9 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
   }
 
   Future<void> raiseIssue() async {
-    final isQc = order?['status'] == 'manufactured';
+    final number = batchNumber;
+    final stage = number == null ? order!['status'] : order!['batches'][number - 1]['status'];
+    final isQc = stage == 'manufactured';
     final details = await showDialog<({String text, List<PlatformFile> files})>(
         context: context,
         builder: (_) => RaiseIssueDialog(
@@ -856,6 +927,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
     String? submissionError;
     try {
       await widget.api.request('POST', '/api/orders/${widget.orderId}/issues', {
+        if (batchNumber != null) 'batch_number': batchNumber,
         'text': details.text,
         'raised_to': isQc ? 'production' : 'planning'
       });
@@ -1099,7 +1171,12 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
           ])));
   @override
   Widget build(BuildContext context) {
-    final data = order;
+    final number = batchNumber;
+    final batches = order?['batches'] as List?;
+    final data = number == null ? order : <String, dynamic>{
+      ...order!, 'status': number == order!['current_batch'] ? order!['status'] : batches![number - 1]['status'],
+      'issues': (order!['issues'] as List).where((i) => i['batch_number'] == number).toList(),
+    };
     return Scaffold(
         appBar: AppBar(title: Text(widget.orderId)),
         body: data == null
@@ -1108,6 +1185,13 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                     ? const CircularProgressIndicator()
                     : Text(error!))
             : ListView(padding: const EdgeInsets.all(20), children: [
+                if (number != null && batches != null) ...[
+                  Text('${batches.where((b) => b['status'] == 'qc_approved').length}/${batches.length} batches complete'),
+                  for (var i = 1; i <= batches.length; i++)
+                    ListTile(selected: i == number, title: Text(batchLabel(data, i)),
+                      onTap: busy ? null : () => setState(() => selectedBatch = i)),
+                ],
+                if (data['aligner_quantity'] != null) Text("Total aligners: ${data['aligner_quantity']}"),
                 Text(data['patient_name'] as String,
                     style: const TextStyle(
                         fontSize: 26, fontWeight: FontWeight.bold)),
@@ -1357,7 +1441,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                     onPressed: busy ? null : raiseIssue,
                                     child: const Text('Raise issue'))),
                         ]), section: 'issues'),
-                if (['marketing', 'clinic_admin', 'clinician']
+                if (number == null && ['marketing', 'clinic_admin', 'clinician']
                         .contains(widget.role) &&
                     [
                       'scanner_review',
@@ -1463,19 +1547,14 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                       FilledButton(
                           onPressed: busy
                               ? null
-                              : () => action('POST',
-                                  '/api/orders/${widget.orderId}/status',
-                                  {'status': 'plan_completed'}),
+                              : submitPlan,
                           child: const Text('Plan completed')),
                   ]),
                 if (canReviewPlan && data['status'] == 'plan_completed')
                   FilledButton(
                       onPressed: busy
                           ? null
-                          : () => action(
-                              'POST',
-                              '/api/orders/${widget.orderId}/status',
-                              {'status': 'clinician_approved'}),
+                          : approvePlan,
                       child: const Text('Clinician approved')),
                 if (canReviewPlan &&
                     data['status'] == 'clinician_issues' &&

@@ -325,7 +325,7 @@ class _QcOrdersPageState extends State<QcOrdersPage> {
                                                               onTap: () => openOrder(
                                                                   orders[i]),
                                                               title: Text(
-                                                                  '${orders[i]['order_id']}  •  ${orders[i]['patient_name']}',
+                                                                  '${_qcOrderLabel(orders[i])}  •  ${orders[i]['patient_name']}',
                                                                   style: const TextStyle(
                                                                       fontWeight:
                                                                           FontWeight
@@ -394,6 +394,14 @@ class _QcOrdersPageState extends State<QcOrdersPage> {
                                 ]))));
 }
 
+String _qcOrderLabel(Map order) {
+  final number = order['current_batch'];
+  final batches = order['batches'] as List?;
+  final id = order['order_id'] ?? '';
+  if (number is! int || batches == null) return '$id';
+  return '$id · Batch $number/${batches.length} · ${batches[number - 1]['quantity']} aligners';
+}
+
 String _qcStatus(Map<String, dynamic> order) {
   final status = order['status'];
   if (status == 'qc_issues') return 'Issue raised';
@@ -401,6 +409,7 @@ String _qcStatus(Map<String, dynamic> order) {
     final issues = (order['issues'] as List?) ?? [];
     return issues.any((issue) =>
             issue is Map &&
+            issue['batch_number'] == order['current_batch'] &&
             ['lab', 'production'].contains(issue['raised_to']) &&
             issue['resolved_at'] != null)
         ? 'Issue resolved'
@@ -434,7 +443,7 @@ class _QcRow extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                         Text(value,
-                            maxLines: 1,
+                            maxLines: heading == 'ORDER ID' ? 3 : 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                                 fontFamily: mono ? 'monospace' : null,
@@ -452,7 +461,7 @@ class _QcRow extends StatelessWidget {
     return Row(children: [
       cell('SENT BY', assignedBy.isEmpty ? 'Lab team' : assignedBy, 24,
           sub: 'Lab team', bold: true),
-      cell('ORDER ID', '${data['order_id'] ?? ''}', 22,
+      cell('ORDER ID', _qcOrderLabel(data), 22,
           sub: data['patient_name']?.toString(), mono: true),
       cell('CLINIC', '${clinic['name'] ?? ''}', 22),
       Expanded(

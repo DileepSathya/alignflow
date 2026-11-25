@@ -45,6 +45,39 @@ class QcIssueTests(unittest.TestCase):
         return main.add_issue("ORD-000001", main.IssueInput(text="Remake tray", raised_to="production"),
                               user={"role": "planning", "name": "Reviewer"})
 
+    def test_next_batch_waits_for_qc_approval(self):
+        admin = {"id": 1, "name": "Admin", "role": "admin"}
+        order_id = self.order["order_id"]
+        self.order.update(status="planning_in_progress", assigned_planner=admin)
+
+        def change(status, **kwargs):
+            main.change_status(order_id, main.StatusInput(status=status, **kwargs), admin)
+
+        change("plan_completed", aligner_quantity=21)
+        with self.assertRaises(HTTPException):
+            change("clinician_approved", dispatch_mode="batches", batch_count=22)
+        change("clinician_approved", dispatch_mode="batches", batch_count=4)
+        self.assertEqual([b["quantity"] for b in self.order["batches"]], [5, 5, 5, 6])
+        for number in range(1, 5):
+            if number > 1:
+                change("plan_completed", batch_number=number)
+                change("clinician_approved", batch_number=number)
+            change("manufacturing_in_process", batch_number=number)
+            change("manufactured", batch_number=number)
+            self.assertEqual(self.order["current_batch"], number)
+            self.assertEqual(self.order["status"], "manufactured")
+            if number < 4:
+                self.assertEqual(self.order["batches"][number]["status"], "upcoming")
+                with self.assertRaises(HTTPException):
+                    change("plan_completed", batch_number=number + 1)
+            if number == 1:
+                main.add_issue(order_id, main.IssueInput(text="Revise", raised_to="production", batch_number=1), admin)
+                main.resolve_issue(order_id, self.order["issues"][0]["id"], admin)
+                self.assertEqual(self.order["current_batch"], 1)
+            change("qc_approved", batch_number=number)
+            self.assertEqual(self.order["current_batch"], min(number + 1, 4))
+            self.assertEqual(self.order["status"], "qc_approved" if number == 4 else "planning_in_progress")
+
     def test_qc_issue_routes_to_lab_and_blocks_approval(self):
         self.raise_qc_issue()
         self.assertEqual(self.order["status"], "qc_issues")
