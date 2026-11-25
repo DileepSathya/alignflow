@@ -35,7 +35,7 @@ class QcIssueTests(unittest.TestCase):
         self.patches = [
             patch.object(main, "get_order", return_value=self.order),
             patch.object(main, "order_store", return_value=self.store),
-            patch.object(main, "public_order", side_effect=lambda order: order),
+            patch.object(main, "public_order", side_effect=lambda order, user: order),
         ]
         for item in self.patches:
             item.start()
@@ -80,6 +80,9 @@ class QcIssueTests(unittest.TestCase):
 
     def test_qc_issue_routes_to_lab_and_blocks_approval(self):
         self.raise_qc_issue()
+        self.raise_qc_issue()
+        main.resolve_issue("ORD-000001", self.order["issues"][0]["id"],
+                           user={"role": "production", "name": "Maker"})
         self.assertEqual(self.order["status"], "qc_issues")
         self.assertEqual(self.order["issues"][0]["raised_to"], "production")
         with self.assertRaises(HTTPException) as caught:

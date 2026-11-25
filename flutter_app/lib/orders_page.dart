@@ -1,4 +1,5 @@
 import 'scanner_checklist.dart';
+import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
@@ -727,85 +728,7 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
   }
 }
 
-class RaiseIssueDialog extends StatefulWidget {
-  final String targetTeam;
-  const RaiseIssueDialog({super.key, required this.targetTeam});
 
-  @override
-  State<RaiseIssueDialog> createState() => _RaiseIssueDialogState();
-}
-
-class _RaiseIssueDialogState extends State<RaiseIssueDialog> {
-  final comment = TextEditingController();
-  List<PlatformFile> files = [];
-  String? error;
-
-  @override
-  void dispose() {
-    comment.dispose();
-    super.dispose();
-  }
-
-  Future<void> pickFiles() async {
-    final selection = await FilePicker.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'stl']);
-    if (mounted && selection.isNotEmpty)
-      setState(() => files = [...files, ...selection]);
-  }
-
-  void submit() {
-    final text = comment.text.trim();
-    if (text.isEmpty) {
-      setState(() => error = 'Describe the issue before submitting.');
-      return;
-    }
-    Navigator.pop(context, (text: text, files: files));
-  }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-        title: const Text('Raise issue'),
-        content: SizedBox(
-            width: 520,
-            child: SingleChildScrollView(
-                child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                  TextField(
-                      controller: comment,
-                      maxLines: 4,
-                      decoration: InputDecoration(
-                          labelText: 'Issue comment *',
-                          hintText:
-                              'Describe the issue for the ${widget.targetTeam} team')),
-                  const SizedBox(height: 16),
-                  OutlinedButton.icon(
-                      onPressed: pickFiles,
-                      icon: const Icon(Icons.attach_file),
-                      label: const Text('Attach files (optional)')),
-                  const Text('PDF, JPG, PNG, or STL'),
-                  for (var i = 0; i < files.length; i++)
-                    ListTile(
-                        dense: true,
-                        title: Text(files[i].name),
-                        trailing: IconButton(
-                            tooltip: 'Remove file',
-                            icon: const Icon(Icons.close),
-                            onPressed: () =>
-                                setState(() => files.removeAt(i)))),
-                  if (error != null)
-                    Text(error!, style: const TextStyle(color: Colors.red)),
-                ]))),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          FilledButton(onPressed: submit, child: const Text('Raise issue')),
-        ],
-      );
-}
 
 class OrderDetailPage extends StatefulWidget {
   final Api api;
@@ -824,7 +747,20 @@ class OrderDetailPage extends StatefulWidget {
   State<OrderDetailPage> createState() => _OrderDetailPageState();
 }
 
-class _OrderDetailPageState extends State<OrderDetailPage> {
+class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingObserver {
+  final issueText = TextEditingController();
+  final issueExpansion = <String, bool>{};
+  final openConversations = <String>{};
+  final pendingReceipts = <String>{};
+  final readThrough = <String, int>{};
+  final issueScroll = ScrollController();
+  Timer? issuePoll;
+  bool polling = false;
+  final replyDrafts = <String, TextEditingController>{};
+  final issueFiles = <PlatformFile>[];
+  String? savedIssueId;
+  int? issueBatch;
+  String? issueError;
   int? selectedBatch;
   int? get batchNumber => selectedBatch ?? order?['current_batch'] as int?;
   Map<String, dynamic>? order;
@@ -848,6 +784,10 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    issueScroll.addListener(() {
+      if (openConversations.isNotEmpty && issuesVisible) setState(() {});
+    });
     refresh();
     if (widget.role == 'admin' || widget.role == 'planning') loadPlanners();
   }
@@ -864,7 +804,14 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    issuePoll?.cancel();
+    issueScroll.dispose();
     comment.dispose();
+    issueText.dispose();
+    for (final draft in replyDrafts.values) {
+      draft.dispose();
+    }
     super.dispose();
   }
 
@@ -1013,48 +960,260 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
     }
   }
 
-  Future<void> raiseIssue() async {
-    final number = batchNumber;
-    final stage = number == null ? order!['status'] : order!['batches'][number - 1]['status'];
-    final isQc = stage == 'manufactured';
-    final details = await showDialog<({String text, List<PlatformFile> files})>(
-        context: context,
-        builder: (_) => RaiseIssueDialog(
-            targetTeam: isQc ? 'Production team' : 'Planning team'));
-    if (details == null || !mounted) return;
+  Future<void> pickIssueFiles() async {
+    setState(() => busy = true);
+    try {
+      final files = await FilePicker.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'stl']);
+      if (mounted) setState(() => issueFiles.addAll(files));
+    } catch (e) {
+      if (mounted) setState(() => issueError = e.toString());
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> raiseIssue(bool isQc) async {
+    final description = issueText.text.trim();
+    if (description.isEmpty) {
+      setState(() => issueError = 'Describe the issue before submitting.');
+      return;
+    }
+    setState(() {
+      busy = true;
+      issueError = null;
+    });
+    try {
+      if (savedIssueId == null) {
+        final result = await widget.api.request('POST', '/api/orders/${widget.orderId}/issues', {
+          if (batchNumber != null) 'batch_number': batchNumber,
+          'text': description,
+          'raised_to': isQc ? 'production' : 'planning',
+        });
+        if (!mounted) return;
+        setState(() {
+          issueBatch = batchNumber;
+          savedIssueId = result['issue_id'] as String;
+          order = result['order'] as Map<String, dynamic>;
+        });
+      }
+      while (issueFiles.isNotEmpty) {
+        final result = await widget.api.uploadOrderFile(
+            widget.orderId, issueFiles.first, issueId: savedIssueId);
+        if (!mounted) return;
+        setState(() {
+          issueFiles.removeAt(0);
+          order = result['order'] as Map<String, dynamic>;
+        });
+      }
+      issueText.clear();
+      setState(() => savedIssueId = null);
+    } catch (e) {
+      if (mounted) setState(() => issueError = savedIssueId == null
+          ? e.toString()
+          : 'Issue saved. Upload failed for ${issueFiles.first.name}. $e');
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Widget issueForm(bool isQc) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      if (savedIssueId == null)
+        TextField(controller: issueText, enabled: !busy, minLines: 2, maxLines: 4,
+          maxLength: 5000, decoration: const InputDecoration(hintText: 'Describe the issue')),
+      if (savedIssueId == null)
+        Align(alignment: Alignment.centerLeft, child: OutlinedButton.icon(
+          onPressed: busy ? null : pickIssueFiles, icon: const Icon(Icons.upload_file),
+          label: const Text('Upload documents'))),
+      for (final file in issueFiles)
+        ListTile(dense: true, title: Text(file.name), trailing: IconButton(
+          tooltip: 'Remove file', icon: const Icon(Icons.close),
+          onPressed: busy ? null : () => setState(() {
+            issueFiles.remove(file);
+            issueError = null;
+            if (savedIssueId != null && issueFiles.isEmpty) {
+              savedIssueId = null;
+              issueText.clear();
+            }
+          }))),
+      if (issueError != null)
+        Text(issueError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+      Align(alignment: Alignment.centerRight, child: FilledButton(
+        onPressed: busy ? null : () => raiseIssue(isQc),
+        child: Text(savedIssueId == null ? 'Raise issue' : 'Retry upload'))),
+    ],
+  );
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) pollIssues();
+  }
+
+  bool get issuesVisible => !collapsedSections.contains('issues') &&
+      ModalRoute.of(context)?.isCurrent == true &&
+      WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+
+  Future<void> pollIssues() async {
+    if (!mounted || !issuesVisible || busy || polling || pendingReceipts.isNotEmpty) return;
+    polling = true;
+    final previous = order;
+    try {
+      final result = await widget.api.request('GET', '/api/orders/${widget.orderId}');
+      if (mounted && !busy && issuesVisible && identical(previous, order)) {
+        setState(() => order = result['order'] as Map<String, dynamic>);
+      }
+    } catch (_) {
+      // Keep the displayed order and retry on the next poll.
+    } finally {
+      polling = false;
+    }
+  }
+
+  Future<void> markDisplayedReplies(Map issue, int index) async {
+    final id = issue['id'] as String;
+    if (!mounted || !issuesVisible || !openConversations.contains(id) ||
+        (issue['unread'] ?? 0) == 0 || index < (readThrough[id] ?? 0) ||
+        !pendingReceipts.add(id)) return;
+    try {
+      await widget.api.request('POST', '/api/orders/${widget.orderId}/issues/$id/read',
+          {'through_reply_id': issue['replies'][index]['id']});
+      readThrough[id] = index + 1;
+    } catch (_) {
+      // Retain the badge until the server confirms the receipt.
+    } finally {
+      pendingReceipts.remove(id);
+    }
+    if (readThrough[id] == index + 1) await pollIssues();
+  }
+
+  Widget unreadBadge(Map issue) => Text('${issue['unread']} unread',
+      style: const TextStyle(color: Color(0xff187341), fontWeight: FontWeight.bold));
+
+  Future<void> postIssueReply(String id, TextEditingController draft) async {
+    final text = draft.text.trim();
+    if (text.isEmpty || busy) return;
     setState(() {
       busy = true;
       error = null;
     });
-    var uploaded = 0;
-    var issueCreated = false;
-    String? submissionError;
     try {
-      await widget.api.request('POST', '/api/orders/${widget.orderId}/issues', {
-        if (batchNumber != null) 'batch_number': batchNumber,
-        'text': details.text,
-        'raised_to': isQc ? 'production' : 'planning'
-      });
-      issueCreated = true;
-      for (final file in details.files) {
-        await widget.api.uploadOrderFile(widget.orderId, file);
-        uploaded++;
-      }
+      final result = await widget.api.request('POST',
+          '/api/orders/${widget.orderId}/issues/$id/replies', {'text': text});
+      if (!mounted) return;
+      setState(() => order = result['order'] as Map<String, dynamic>);
+      draft.clear();
     } catch (e) {
-      submissionError = issueCreated
-          ? 'Issue saved; $uploaded of ${details.files.length} files uploaded. $e'
-          : e.toString();
-    } finally {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
       await refresh();
-      if (mounted) {
-        setState(() {
-          busy = false;
-          if (submissionError != null) {
-            error = submissionError;
-          }
-        });
-      }
+    } finally {
+      if (mounted) setState(() => busy = false);
     }
+  }
+
+  Widget issueRow(Map item, Map data, int openCount) {
+    final id = item['id'] as String;
+    final isOpen = item['resolved_at'] == null;
+    final expanded = issueExpansion[id] ?? (isOpen && openCount == 1);
+    final production = ['lab', 'production'].contains(item['raised_to']);
+    final canResolve = production
+        ? canManufacture && data['status'] == 'qc_issues'
+        : widget.role == 'planning' && data['status'] == 'clinician_issues';
+    return Column(key: ValueKey(id), crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      ListTile(
+        leading: Icon(expanded ? Icons.expand_more : Icons.chevron_right),
+        title: Text('Issue #${item['number']} · ${isOpen ? 'Open' : 'Resolved'}'),
+        trailing: (item['unread'] ?? 0) > 0 ? unreadBadge(item) : null,
+        onTap: () => setState(() => issueExpansion[id] = !expanded),
+      ),
+      if (expanded) Padding(
+        padding: const EdgeInsetsDirectional.only(start: 52),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(item['text'] as String),
+          subtitle: Text('${item['by']} → ${production ? 'Production team' : 'Planning team'}'),
+          trailing: canResolve && isOpen ? TextButton(
+            onPressed: busy ? null : () => action('POST', '/api/orders/${widget.orderId}/issues/$id/resolve'),
+            child: const Text('Resolve'),
+          ) : null,
+        ),
+        issueDiscussion(item, data['documents'] as List),
+        ]),
+      ),
+    ]);
+  }
+
+  Widget issueDiscussion(Map issue, List documents) {
+    final id = issue['id'] as String;
+    final attachments = documents.where((doc) => doc['issue_id'] == id).toList();
+    final replies = issue['replies'] as List? ?? const [];
+    final draft = replyDrafts.putIfAbsent(id, () => TextEditingController());
+    final label = Theme.of(context).textTheme.titleSmall;
+    final conversationOpen = openConversations.contains(id);
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      if (attachments.isNotEmpty) ...[
+      Text('Attachments (${attachments.length})', style: label),
+      for (final file in attachments)
+        ListTile(
+          leading: const Icon(Icons.attach_file),
+          title: Text(file['name'] as String),
+          trailing: const Icon(Icons.download_outlined),
+          onTap: () => downloadFile(file as Map),
+        ),
+      const SizedBox(height: 8),
+      ],
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(conversationOpen ? Icons.expand_more : Icons.chevron_right),
+        title: Text('Conversations', style: label),
+        trailing: (issue['unread'] ?? 0) > 0 ? unreadBadge(issue) : null,
+        onTap: () => setState(() {
+          if (!openConversations.remove(id)) openConversations.add(id);
+        }),
+      ),
+      if (conversationOpen) ...[
+        for (final (index, reply) in replies.indexed)
+          Builder(builder: (replyContext) {
+            if ((issue['unread'] ?? 0) > 0) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!replyContext.mounted) return;
+                final box = replyContext.findRenderObject() as RenderBox?;
+                final viewport = Scrollable.of(replyContext).context.findRenderObject() as RenderBox?;
+                if (box == null || viewport == null || !box.hasSize || !viewport.hasSize) return;
+                final bounds = box.localToGlobal(Offset.zero, ancestor: viewport) & box.size;
+                if (bounds.top >= 0 && bounds.top < viewport.size.height &&
+                    (bounds.bottom <= viewport.size.height || bounds.height > viewport.size.height)) {
+                  markDisplayedReplies(issue, index);
+                }
+              });
+            }
+            return ListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: Text(reply['text'] as String),
+              subtitle: Text('${reply['by']} · ${activityTimestamp(reply['at'])}'),
+            );
+          }),
+        if (issue['resolved_at'] == null) ...[
+          TextField(
+            key: PageStorageKey('issue-reply-$id'),
+            controller: draft, enabled: !busy, minLines: 1, maxLines: 4,
+            maxLength: 5000, decoration: const InputDecoration(hintText: 'Reply to this issue'),
+          ),
+          Align(alignment: Alignment.centerRight, child: ValueListenableBuilder<TextEditingValue>(
+            valueListenable: draft,
+            builder: (_, value, __) => FilledButton(
+              onPressed: busy || value.text.trim().isEmpty ? null : () => postIssueReply(id, draft),
+              child: const Text('Post reply'),
+            ),
+          )),
+        ],
+      ],
+      const Divider(),
+    ]);
   }
 
   Future<void> downloadFile(Map document) async {
@@ -1262,11 +1421,30 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                       fontWeight: FontWeight.bold, fontSize: 16))
             else
               InkWell(
-                  onTap: () => setState(() {
-                        if (!collapsedSections.add(section)) {
+                  onTap: () async {
+                    final opening = collapsedSections.contains(section);
+                    setState(() {
+                        if (opening) {
                           collapsedSections.remove(section);
+                        } else {
+                          collapsedSections.add(section);
                         }
-                      }),
+                    });
+                    if (section == 'issues') {
+                      issuePoll?.cancel();
+                      if (opening) {
+                        issuePoll = Timer.periodic(const Duration(seconds: 10), (_) => pollIssues());
+                      }
+                    }
+                    if (section == 'issues' && opening && !busy) {
+                      setState(() => busy = true);
+                      try {
+                        await refresh();
+                      } finally {
+                        if (mounted) setState(() => busy = false);
+                      }
+                    }
+                  },
                   child: Row(children: [
                     Expanded(
                         child: Text(title,
@@ -1289,6 +1467,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
       ...order!, 'status': number == order!['current_batch'] ? order!['status'] : batches![number - 1]['status'],
       'issues': (order!['issues'] as List).where((i) => i['batch_number'] == number).toList(),
     };
+    final openCount = (data?['issues'] as List? ?? []).where((i) => i['resolved_at'] == null).length;
     return Scaffold(
         appBar: AppBar(title: Text(widget.orderId)),
         body: data == null
@@ -1296,7 +1475,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                 child: error == null
                     ? const CircularProgressIndicator()
                     : Text(error!))
-            : ListView(padding: const EdgeInsets.all(20), children: [
+            : ListView(controller: issueScroll, padding: const EdgeInsets.all(20), children: [
                 if (number != null && batches != null) ...[
                   Text('${batches.where((b) => b['status'] == 'qc_approved').length}/${batches.length} batches complete'),
                   for (var i = 1; i <= batches.length; i++)
@@ -1518,42 +1697,12 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           for (final item in data['issues'] as List)
-                            ListTile(
-                                title: Text(item['text'] as String),
-                                subtitle: Text('${item['by']} → ${[
-                                  'lab',
-                                  'production'
-                                ].contains(item['raised_to']) ? 'Production team' : 'Planning team'} • ${item['resolved_at'] == null ? 'Open' : 'Resolved'}'),
-                                trailing: ((widget.role == 'planning' &&
-                                                [
-                                                  'cad',
-                                                  'planning'
-                                                ].contains(item['raised_to']) &&
-                                                data['status'] ==
-                                                    'clinician_issues') ||
-                                            (canManufacture &&
-                                                [
-                                                  'lab',
-                                                  'production'
-                                                ].contains(item['raised_to']) &&
-                                                data['status'] ==
-                                                    'qc_issues')) &&
-                                        item['resolved_at'] == null
-                                    ? TextButton(
-                                        onPressed: busy
-                                            ? null
-                                            : () => action('POST',
-                                                '/api/orders/${widget.orderId}/issues/${item['id']}/resolve'),
-                                        child: const Text('Resolve'))
-                                    : null),
-                          if ((canReviewPlan && data['status'] == 'plan_completed') ||
-                              (canReviewQc &&
-                                  data['status'] == 'manufactured'))
-                            Align(
-                                alignment: Alignment.centerRight,
-                                child: FilledButton(
-                                    onPressed: busy ? null : raiseIssue,
-                                    child: const Text('Raise issue'))),
+                            issueRow(item as Map, data, openCount),
+                          if ((savedIssueId != null && issueBatch == number) ||
+                              (savedIssueId == null && (number == null || number == order!['current_batch']) &&
+                                ((canReviewPlan && ['plan_completed', 'clinician_issues'].contains(data['status'])) ||
+                                 (canReviewQc && ['manufactured', 'qc_issues'].contains(data['status'])))))
+                            issueForm(['manufactured', 'qc_issues'].contains(data['status'])),
                         ]), section: 'issues'),
                 if (number == null && ['marketing', 'clinic_admin', 'clinician']
                         .contains(widget.role) &&

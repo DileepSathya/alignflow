@@ -274,9 +274,11 @@ def current_user(request: Request, authorization: str | None = Header(default=No
         allowed_post = path in {'/api/logout', '/api/my-clinic/clinicians', '/api/orders'} or order_action
         route = request.scope.get("route")
         template = getattr(route, "path", "")
+        issue_reply = request.method == "POST" and template in {
+            "/api/orders/{order_id}/issues/{issue_id}/replies", "/api/orders/{order_id}/issues/{issue_id}/read"}
         checklist_edit = request.method == "PUT" and template == "/api/orders/{order_id}/checklist/{item_id}"
         review_submit = request.method == "POST" and template == "/api/orders/{order_id}/document-review/submit"
-        if not (checklist_edit or review_submit or (request.method == 'GET' and allowed_get) or (request.method == 'POST' and allowed_post)):
+        if not (checklist_edit or review_submit or issue_reply or (request.method == 'GET' and allowed_get) or (request.method == 'POST' and allowed_post)):
             raise HTTPException(status_code=403, detail='Clinic access is restricted')
         with conn.cursor() as cur:
             cur.execute('SELECT c.approval_status, p.clinician_id FROM clinics c LEFT JOIN clinicians p '
@@ -838,7 +840,7 @@ def save_scanner_change(doc, fields, user, action, **details):
         return_document=ReturnDocument.AFTER)
     if updated is None:
         raise HTTPException(status_code=409, detail="Order changed; reload and try again")
-    return {"order": public_order(updated)}
+    return {"order": public_order(updated, user)}
 
 
 def can_prepare_documents(doc, user):
@@ -972,8 +974,16 @@ def approve_documents(order_id: str, body: DocumentDecision, user=Depends(curren
         user, "Approved for Planning")
 
 
-def public_order(doc):
-    result = {k: v for k, v in doc.items() if k not in {"_id", "request_id", "activity"}}
+def public_order(doc, user=None):
+    result = {k: v for k, v in doc.items() if k not in {"_id", "request_id", "activity", "issue_reads"}}
+    viewer = (user or {}).get("id")
+    receipts = doc.get("issue_reads", {}).get(str(viewer), {})
+    result["issues"] = []
+    for number, issue in enumerate(doc.get("issues", []), 1):
+        replies = issue.get("replies", [])
+        unread = sum(r.get("author_id") is not None and r["author_id"] != viewer
+                     for r in replies[receipts.get(issue["id"], 0):]) if viewer is not None else 0
+        result["issues"].append({**issue, "number": number, "unread": unread})
     result["id"] = str(doc["_id"])
     result["planner_assignment_open"] = doc.get("status") in PLANNER_ASSIGNMENT_STEPS
     result["documents"] = [{k: v for k, v in item.items() if k != "storage_key"}
@@ -1044,7 +1054,7 @@ def create_order(body: OrderInput, user=Depends(current_user), conn=Depends(conn
     if existing:
         if existing["created_by"]["id"] != user["id"]:
             raise HTTPException(status_code=409, detail="Request ID already used")
-        return {"order": public_order(existing)}
+        return {"order": public_order(existing, user)}
     with conn.cursor() as cur:
         cur.execute("SELECT * FROM clinics WHERE id = %s", (body.clinic_id,))
         clinic = cur.fetchone()
@@ -1104,12 +1114,12 @@ def create_order(body: OrderInput, user=Depends(current_user), conn=Depends(conn
     except DuplicateKeyError:
         existing = order_store().find_one({"request_id": body.request_id})
         if existing and existing["created_by"]["id"] == user["id"]:
-            return {"order": public_order(existing)}
+            return {"order": public_order(existing, user)}
         raise HTTPException(status_code=409, detail="Duplicate order request")
     with conn.cursor() as cur:
         cur.execute("INSERT INTO patient_orders (order_id, patient_id) VALUES (%s, %s)",
                     (doc["order_id"], patient["patient_id"]))
-    return {"order": public_order(doc)}
+    return {"order": public_order(doc, user)}
 
 
 def performance_period(period):
@@ -1353,7 +1363,7 @@ def list_orders(q: str = "", status_filter: str = "", status_group: str = "", vi
     total = collection.count_documents(query)
     offset = (page - 1) * limit
     rows = collection.find(query).sort("created_at", DESCENDING).skip(offset).limit(limit)
-    return {"orders": [public_order(row) for row in rows], "total": total, "page": page}
+    return {"orders": [public_order(row, user) for row in rows], "total": total, "page": page}
 
 
 @app.get("/api/cad/overview")
@@ -1472,7 +1482,7 @@ def admin_overview(admin=Depends(admin_user), conn=Depends(connection), detailed
 @app.get("/api/orders/{order_id}")
 def order_detail(order_id: str, user=Depends(current_user)):
     doc = get_order(order_id, user)
-    return {"order": {**public_order(doc), "can_prepare_documents": can_prepare_documents(doc, user)}}
+    return {"order": {**public_order(doc, user), "can_prepare_documents": can_prepare_documents(doc, user)}}
 
 
 def activity_time(value):
@@ -1607,7 +1617,7 @@ def edit_patient(order_id: str, body: PatientUpdate, user=Depends(marketing_user
     if changed:
         order_store().update_one({"order_id": order_id}, audited_update(
             {"$set": fields}, "Patient details edited", user, timestamp, fields=changed))
-    return {"order": public_order(get_order(order_id, user))}
+    return {"order": public_order(get_order(order_id, user), user)}
 
 
 @app.post("/api/orders/{order_id}/comments", status_code=201)
@@ -1619,16 +1629,18 @@ def add_comment(order_id: str, body: CommentInput, user=Depends(current_user)):
         "id": comment_id, "text": body.text.strip(), "at": timestamp,
         "by": user["name"], "role": user["role"]}}}, "Comment added", user, timestamp,
         comment_id=comment_id))
-    return {"order": public_order(get_order(order_id, user))}
+    return {"order": public_order(get_order(order_id, user), user)}
 
 
 @app.post("/api/orders/{order_id}/issues", status_code=201)
 def add_issue(order_id: str, body: IssueInput, user=Depends(current_user)):
     order = get_order(order_id, user)
     doc = workflow_view(order, body.batch_number)
+    if not body.text.strip():
+        raise HTTPException(422, "Describe the issue before submitting")
     if doc["status"] == "cancelled":
         raise HTTPException(status_code=409, detail="Order is cancelled")
-    if doc["status"] == "plan_completed" and user["role"] in CLINICAL_REVIEW_ROLES:
+    if doc["status"] in {"plan_completed", "clinician_issues"} and user["role"] in CLINICAL_REVIEW_ROLES:
         source_status, issue_status, target_team = "plan_completed", "clinician_issues", "planning"
     elif user["role"] in QC_REVIEW_ROLES:
         source_status, issue_status, target_team = "manufactured", "qc_issues", "production"
@@ -1636,25 +1648,68 @@ def add_issue(order_id: str, body: IssueInput, user=Depends(current_user)):
         raise HTTPException(status_code=409, detail="Clinical feedback requires a completed plan")
     else:
         raise HTTPException(status_code=403, detail="This team cannot raise an issue")
-    if body.raised_to != target_team or doc["status"] != source_status:
+    if body.raised_to != target_team or doc["status"] not in {source_status, issue_status}:
         raise HTTPException(status_code=409, detail="Issue cannot be raised at this order stage or for this team")
     timestamp = now()
     issue_id = str(ObjectId())
+    source_status = doc["status"]
     guard = {"order_id": order_id, "status": source_status}
     fields = {"status": issue_status}
     batch_transition(order, body.batch_number, issue_status, fields, guard)
+    events = {"issues": {"id": issue_id, "text": body.text.strip(), "at": timestamp, "by": user["name"],
+                         "raised_by_id": user.get("id"), "raised_to": target_team,
+                         "resolved_at": None, "batch_number": body.batch_number}}
+    if source_status != issue_status:
+        events["history"] = {"status": issue_status, "at": timestamp, "by": user["name"]}
     updated = order_store().find_one_and_update(
-        guard,
-        audited_update({"$push": {"issues": {"id": issue_id, "text": body.text.strip(),
-                              "at": timestamp, "by": user["name"], "raised_to": target_team,
-                              "resolved_at": None, "batch_number": body.batch_number},
-                   "history": {"status": issue_status, "at": timestamp, "by": user["name"]}},
-         "$set": fields}, "Issue raised", user, timestamp, batch_number=body.batch_number,
+        guard, audited_update({"$push": events, "$set": fields, "$inc": {"issue_revision": 1}},
+         "Issue raised", user, timestamp, batch_number=body.batch_number,
          issue_id=issue_id, from_status=source_status, to_status=issue_status),
         return_document=ReturnDocument.AFTER)
     if updated is None:
         raise HTTPException(status_code=409, detail="Order changed; reload and try again")
-    return {"order": public_order(updated)}
+    return {"order": public_order(updated, user), "issue_id": issue_id}
+
+
+@app.post("/api/orders/{order_id}/issues/{issue_id}/replies", status_code=201)
+def add_issue_reply(order_id: str, issue_id: str, body: CommentInput, user=Depends(current_user)):
+    get_order(order_id, user)
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(422, "Write a reply before posting")
+    timestamp = now()
+    reply = {"id": str(ObjectId()), "text": text, "at": timestamp.isoformat(),
+             "by": user["name"], "role": user["role"], "author_id": user["id"]}
+    updated = order_store().find_one_and_update(
+        {"order_id": order_id, "issues": {"$elemMatch": {"id": issue_id, "resolved_at": None}}},
+        audited_update({"$push": {"issues.$.replies": reply}}, "Issue reply posted",
+                       user, timestamp, issue_id=issue_id, reply_id=reply["id"]),
+        return_document=ReturnDocument.AFTER)
+    if updated is None:
+        if any(i["id"] == issue_id for i in get_order(order_id, user)["issues"]):
+            raise HTTPException(409, "This issue is resolved. Its conversation is closed.")
+        raise HTTPException(404, "Issue not found")
+    return {"order": public_order(updated, user)}
+
+
+class IssueRead(BaseModel):
+    through_reply_id: str
+
+
+@app.post("/api/orders/{order_id}/issues/{issue_id}/read")
+def mark_issue_read(order_id: str, issue_id: str, body: IssueRead, user=Depends(current_user)):
+    doc = get_order(order_id, user)
+    issue = next((i for i in doc["issues"] if i["id"] == issue_id), None)
+    if issue is None:
+        raise HTTPException(404, "Issue not found")
+    # Replies are append-only. An older tab cannot rewind a receipt or clear newer arrivals.
+    position = next((n for n, r in enumerate(issue.get("replies", []), 1)
+                     if r["id"] == body.through_reply_id), None)
+    if position is None:
+        raise HTTPException(422, "Reply does not belong to this issue")
+    order_store().update_one({"order_id": order_id},
+                             {"$max": {f"issue_reads.{user['id']}.{issue_id}": position}})
+    return {"read_through": position}
 
 
 @app.post("/api/orders/{order_id}/issues/{issue_id}/resolve")
@@ -1677,14 +1732,14 @@ def resolve_issue(order_id: str, issue_id: str, user=Depends(current_user)):
         raise HTTPException(status_code=409, detail="Issue is not open for resolution")
     timestamp = now()
     remaining = [item for item in doc["issues"] if item["id"] != issue_id and item["resolved_at"] is None]
-    update = {"$set": {"issues.$.resolved_at": timestamp, "updated_at": timestamp}}
+    update = {"$set": {"issues.$.resolved_at": timestamp, "updated_at": timestamp}, "$inc": {"issue_revision": 1}}
     if not remaining:
         update["$set"]["status"] = return_status
         update["$push"] = {"history": {"status": return_status, "at": timestamp, "by": user["name"]}}
     details = {"issue_id": issue_id}
     if not remaining:
         details.update(from_status=issue_status, to_status=return_status)
-    guard = {"order_id": order_id, "status": issue_status,
+    guard = {"order_id": order_id, "status": issue_status, "issue_revision": order.get("issue_revision"),
              "issues": {"$elemMatch": {"id": issue_id, "resolved_at": None}}}
     batch_transition(order, issue.get("batch_number"), issue_status if remaining else return_status, update["$set"], guard)
     updated = order_store().find_one_and_update(
@@ -1693,7 +1748,7 @@ def resolve_issue(order_id: str, issue_id: str, user=Depends(current_user)):
         return_document=ReturnDocument.AFTER)
     if updated is None:
         raise HTTPException(status_code=409, detail="Order changed; reload and try again")
-    return {"order": public_order(updated)}
+    return {"order": public_order(updated, user)}
 
 
 @app.post("/api/orders/{order_id}/assign")
@@ -1710,7 +1765,7 @@ def assign_order(order_id: str, user=Depends(current_user)):
         return_document=ReturnDocument.AFTER)
     if updated is None:
         raise HTTPException(status_code=409, detail="Order already assigned or unavailable")
-    return {"order": public_order(updated)}
+    return {"order": public_order(updated, user)}
 
 
 class AdminAssignment(BaseModel):
@@ -1770,7 +1825,7 @@ def change_assignment(order_id: str, body: AssignmentChange, user=Depends(curren
         return_document=ReturnDocument.AFTER)
     if updated is None:
         raise HTTPException(status_code=409, detail="Order changed; reload and try again")
-    return {"order": public_order(updated)}
+    return {"order": public_order(updated, user)}
 
 
 @app.post("/api/admin/orders/{order_id}/assign")
@@ -1794,7 +1849,7 @@ def admin_assign_order(order_id: str, body: AdminAssignment, admin=Depends(admin
         return_document=ReturnDocument.AFTER)
     if updated is None:
         raise HTTPException(status_code=409, detail="Order already assigned or unavailable")
-    return {"order": public_order(updated)}
+    return {"order": public_order(updated, admin)}
 
 @app.post("/api/orders/{order_id}/status")
 def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
@@ -1866,14 +1921,25 @@ def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
         return_document=ReturnDocument.AFTER)
     if updated is None:
         raise HTTPException(status_code=409, detail="Order changed; reload and try again")
-    return {"order": public_order(updated)}
+    return {"order": public_order(updated, user)}
 
 
 @app.post("/api/orders/{order_id}/documents", status_code=201)
-async def upload_order_document(order_id: str, file: UploadFile = File(...), user=Depends(current_user), checklist_id: str = Form("")):
+async def upload_order_document(order_id: str, file: UploadFile = File(...), user=Depends(current_user),
+                                checklist_id: str = Form(""), issue_id: str = Form("")):
     doc = get_order(order_id, user)
     if doc["status"] == "cancelled":
         raise HTTPException(status_code=409, detail="Order is cancelled")
+    if isinstance(issue_id, str) and issue_id:
+        issue = next((i for i in doc.get("issues", []) if i["id"] == issue_id), None)
+        if issue is None:
+            raise HTTPException(404, "Issue not found")
+        if issue.get("raised_by_id") != user["id"]:
+            raise HTTPException(403, "Only the issue author can attach files")
+        if isinstance(checklist_id, str) and checklist_id:
+            raise HTTPException(400, "Choose an issue or a checklist item")
+    else:
+        issue_id = ""
     if not isinstance(checklist_id, str):
         checklist_id = ""
     if checklist_id:
@@ -1893,6 +1959,12 @@ async def upload_order_document(order_id: str, file: UploadFile = File(...), use
     meta = {"id": str(ObjectId()), "storage_key": key, "name": filename,
             "size": size, "sha256": checksum, "content_type": file.content_type,
             "at": now(), "by": user["name"], "role": user["role"], "checklist_id": checklist_id}
+    if issue_id:
+        meta["issue_id"] = issue_id
+        if any(d.get("issue_id") == issue_id and d["name"] == filename and d.get("sha256") == checksum
+               for d in doc.get("documents", [])):
+            storage_path(settings.data_dir / "orders", key).unlink(missing_ok=True)
+            return {"order": public_order(doc, user)}
     try:
         fields = {}
         if checklist_id:
@@ -1912,7 +1984,7 @@ async def upload_order_document(order_id: str, file: UploadFile = File(...), use
     except BaseException:
         storage_path(settings.data_dir / "orders", key).unlink(missing_ok=True)
         raise
-    return {"order": public_order(get_order(order_id, user))}
+    return {"order": public_order(get_order(order_id, user), user)}
 
 
 @app.get("/api/orders/{order_id}/documents/{document_id}")

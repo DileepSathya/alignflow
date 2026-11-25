@@ -50,7 +50,7 @@ class LabWorkflowTests(unittest.TestCase):
         store = _Orders(order)
         with patch.object(main, "get_order", return_value=order), \
              patch.object(main, "order_store", return_value=store), \
-             patch.object(main, "public_order", side_effect=lambda value: value):
+             patch.object(main, "public_order", side_effect=lambda value, user: value):
             user = {"role": "production", "name": "Maker"}
             with self.assertRaises(HTTPException) as caught:
                 main.change_status(order["order_id"], main.StatusInput(status="manufactured"), user=user)

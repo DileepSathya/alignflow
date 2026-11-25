@@ -149,6 +149,28 @@ class ScannerTests(unittest.TestCase):
         self.assert_status(403, main.update_checklist, self.doc['order_id'], 'upper_arch',
                            main.ChecklistInput(waiver_reason='missing'), user=SCANNER)
 
+    def test_issue_attachment_is_linked_and_retry_keeps_one_copy(self):
+        self.doc.update(status='manufactured', issues=[])
+        order_id = self.doc['order_id']
+        issue_id = main.add_issue(order_id, main.IssueInput(
+            text='Tray needs revision', raised_to='production'), user=ADMIN)['issue_id']
+        self.store.update_one.side_effect = lambda guard, change: SimpleNamespace(
+            matched_count=int(self.update(guard, change) is not None))
+
+        def attach(user):
+            upload = UploadFile(filename='tray.stl', file=io.BytesIO(b'solid tray'),
+                                headers=Headers({'content-type': 'application/octet-stream'}))
+            return asyncio.run(main.upload_order_document(order_id, upload, user=user, issue_id=issue_id))
+
+        with tempfile.TemporaryDirectory() as directory, patch.object(main.settings, 'data_dir', Path(directory)):
+            self.assert_status(403, attach, dict(ADMIN, id=42))
+            attach(ADMIN)
+            order = attach(ADMIN)['order']
+            self.assertEqual(len(order['documents']), 1)
+            self.assertEqual(order['documents'][0]['issue_id'], order['issues'][0]['id'])
+            files = [p for p in Path(directory).rglob('*') if p.is_file()]
+            self.assertEqual([p.read_bytes() for p in files], [b'solid tray'])
+
     def test_admin_can_upload_and_select_a_required_file(self):
         order_id = self.doc['order_id']
         self.store.update_one.side_effect = lambda guard, change: SimpleNamespace(
