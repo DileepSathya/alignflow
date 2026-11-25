@@ -444,6 +444,9 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
   late final requestId =
       '${DateTime.now().microsecondsSinceEpoch}-${Random.secure().nextInt(0x7fffffff)}-${Random.secure().nextInt(0x7fffffff)}';
   List<PlatformFile> attachments = [];
+  final Map<String, List<int>> mappedFiles = {};
+  List<dynamic> mandatoryItems = [];
+  bool checklistLoaded = false;
   String? createdOrderId;
   int uploadedCount = 0;
   @override
@@ -465,7 +468,77 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
       setState(() => attachments = [...attachments, ...result]);
   }
 
-  Future<void> save() async {
+  Future<void> loadChecklist() async {
+    try {
+      final response = await widget.api.request('GET', '/api/scanner/checklist');
+      if (mounted) {
+        setState(() {
+          mandatoryItems = (response['items'] as List)
+              .where((item) => item['mandatory'] == true).toList();
+          checklistLoaded = true;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => error = 'Could not load required files: $e');
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    loadChecklist();
+  }
+
+  Future<void> selectMappedFiles(Map item) async {
+    final id = item['id'] as String;
+    final compatible = <int>[
+      for (var index = 0; index < attachments.length; index++)
+        if ((item['extensions'] as List).any((extension) =>
+            attachments[index].name.toLowerCase().endsWith(extension as String)) &&
+            !mappedFiles.entries.any((entry) =>
+                entry.key != id && entry.value.contains(index)))
+          index
+    ];
+    final selected = Set<int>.from(mappedFiles[id] ?? []);
+    final result = await showDialog<Set<int>>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+            builder: (context, update) => AlertDialog(
+                  title: Text('Map ${item['label']}'),
+                  content: SizedBox(
+                      width: 480,
+                      child: ListView(shrinkWrap: true, children: [
+                        for (final index in compatible)
+                          CheckboxListTile(
+                              title: Text(attachments[index].name),
+                              value: selected.contains(index),
+                              onChanged: (value) => update(() {
+                                    if (value == true) {
+                                      selected.add(index);
+                                    } else {
+                                      selected.remove(index);
+                                    }
+                                  }))
+                      ])),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel')),
+                    FilledButton(
+                        onPressed: () => Navigator.pop(context, selected),
+                        child: const Text('Save'))
+                  ],
+                )));
+    if (result != null && mounted) {
+      setState(() => mappedFiles[id] = result.toList()..sort());
+    }
+  }
+
+  bool get allMandatoryMapped => checklistLoaded && mandatoryItems.every(
+      (item) => (mappedFiles[item['id']] ?? []).length >= item['min_files']);
+
+  Future<void> save({bool sendForReview = false}) async {
+    if (sendForReview && !allMandatoryMapped) return;
     if (name.text.trim().isEmpty ||
         mobile.text.trim().isEmpty ||
         clinicId == null ||
@@ -504,9 +577,18 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
           : null;
       createdOrderId ??= (result!['order'] as Map)['order_id'] as String;
       while (uploadedCount < attachments.length) {
+        final index = uploadedCount;
+        final checklistId = mappedFiles.entries
+            .where((entry) => entry.value.contains(index))
+            .map((entry) => entry.key)
+            .firstOrNull;
         await widget.api
-            .uploadOrderFile(createdOrderId!, attachments[uploadedCount]);
+            .uploadOrderFile(createdOrderId!, attachments[index], checklistId: checklistId);
         uploadedCount++;
+      }
+      if (sendForReview) {
+        await widget.api.request('POST',
+            '/api/orders/$createdOrderId/document-review/submit');
       }
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -518,6 +600,7 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
       if (mounted) setState(() => saving = false);
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -601,11 +684,19 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
                           labelText: 'Case notes (optional)')),
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
-                      onPressed: saving ? null : pickFiles,
+                      onPressed: saving || createdOrderId != null ? null : pickFiles,
                       icon: const Icon(Icons.attach_file),
                       label: const Text('Attach photos, X-rays or scans')),
                   if (attachments.isNotEmpty)
                     Text('${attachments.length} file(s) selected'),
+                  for (final item in mandatoryItems) ...[
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                        onPressed: saving || createdOrderId != null || attachments.isEmpty ? null : () => selectMappedFiles(item),
+                        icon: const Icon(Icons.upload_file),
+                        label: Text('Map ${item['label']}')),
+                    Text('${(mappedFiles[item['id']] ?? []).length}/${item['min_files']} files mapped • ${(item['extensions'] as List).join(', ')}'),
+                  ],
                   if (error != null)
                     Padding(
                         padding: const EdgeInsets.only(top: 10),
@@ -617,8 +708,13 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
               onPressed: saving ? null : () => Navigator.pop(context),
               child: const Text('Cancel')),
           FilledButton(
-              onPressed: saving ? null : save,
-              child: Text(saving ? 'Submitting...' : 'Submit order'))
+              onPressed: saving ? null : () => save(),
+              child: Text(saving ? 'Submitting...' : 'Submit order')),
+          FilledButton(
+              onPressed: saving || !allMandatoryMapped
+                  ? null
+                  : () => save(sendForReview: true),
+              child: const Text('Submit for planner review'))
         ]);
   }
 }

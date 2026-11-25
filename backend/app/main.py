@@ -269,7 +269,7 @@ def current_user(request: Request, authorization: str | None = Header(default=No
         raise HTTPException(status_code=401, detail="Session expired")
     if user['role'] in CLINIC_ROLES:
         path = request.url.path
-        allowed_get = path in {'/api/me', '/api/my-clinic', '/api/my-clinic/overview', '/api/orders', '/api/patients'} or path.startswith('/api/orders/')
+        allowed_get = path in {'/api/me', '/api/my-clinic', '/api/my-clinic/overview', '/api/orders', '/api/patients', '/api/scanner/checklist'} or path.startswith('/api/orders/')
         order_action = path.startswith('/api/orders/') and path.split('/')[-1] in {'issues', 'status', 'documents'}
         allowed_post = path in {'/api/logout', '/api/my-clinic/clinicians', '/api/orders'} or order_action
         route = request.scope.get("route")
