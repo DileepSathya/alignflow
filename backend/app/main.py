@@ -672,6 +672,7 @@ def delete_clinic(clinic_id: int, user=Depends(marketing_user), conn=Depends(con
 
 
 class OrderInput(BaseModel):
+    case_id: str | None = None
     request_id: str = Field(min_length=8, max_length=100)
     patient_name: str = Field(min_length=1, max_length=160)
     patient_mobile_number: str = Field(min_length=1, max_length=30)
@@ -684,6 +685,7 @@ class OrderInput(BaseModel):
 
 
 class PatientUpdate(BaseModel):
+    case_id: str | None = None
     patient_name: str = Field(min_length=1, max_length=160)
     patient_mobile_number: str = Field(max_length=30)
     patient_email: str | None = None
@@ -1083,6 +1085,7 @@ def create_order(body: OrderInput, user=Depends(current_user), conn=Depends(conn
         return_document=ReturnDocument.AFTER)["value"]
     timestamp = now()
     doc = {"order_id": f"ORD-{sequence:06d}", "request_id": body.request_id,
+           "case_id": (body.case_id or "").strip() or None,
            "patient_id": f"PAT-{patient['patient_id']:06d}", "clinic_patient_id": patient["clinic_patient_id"],
            "patient_name": body.patient_name.strip(), "age": body.age, "notes": body.notes.strip(),
            "patient_mobile_number": patient["mobile_number"], "patient_email": patient.get("email"),
@@ -1598,6 +1601,8 @@ def edit_patient(order_id: str, body: PatientUpdate, user=Depends(marketing_user
              "$or": [{key: {"$ne": value}} for key, value in shared.items()]},
             audited_update({"$set": shared.copy()}, "Linked patient details updated", user, timestamp))
     fields = {**shared, "age": body.age, "notes": body.notes.strip()}
+    if "case_id" in body.model_fields_set:
+        fields["case_id"] = (body.case_id or "").strip() or None
     changed = [key for key, value in fields.items() if order.get(key) != value]
     if changed:
         order_store().update_one({"order_id": order_id}, audited_update(

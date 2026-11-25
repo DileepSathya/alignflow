@@ -429,6 +429,7 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
       mobile = TextEditingController(),
       email = TextEditingController(),
       clinicPatientId = TextEditingController(),
+      caseId = TextEditingController(),
       age = TextEditingController(),
       notes = TextEditingController();
   int? get clinicId => widget.clinics.length == 1
@@ -455,6 +456,7 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
     mobile.dispose();
     email.dispose();
     clinicPatientId.dispose();
+    caseId.dispose();
     age.dispose();
     notes.dispose();
     super.dispose();
@@ -562,6 +564,7 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
       final result = createdOrderId == null
           ? await widget.api.request('POST', '/api/orders', {
               'request_id': requestId,
+              if (caseId.text.trim().isNotEmpty) 'case_id': caseId.text.trim(),
               'patient_name': name.text.trim(),
               'patient_mobile_number': mobile.text.trim(),
               'patient_email':
@@ -639,6 +642,11 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
                       controller: clinicPatientId,
                       decoration: const InputDecoration(
                           labelText: 'Clinic patient ID (optional)')),
+                  const SizedBox(height: 12),
+                  TextField(
+                      controller: caseId,
+                      decoration:
+                          const InputDecoration(labelText: 'Case ID (optional)')),
                   const SizedBox(height: 12),
                   TextField(
                       controller: age,
@@ -1070,6 +1078,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
         TextEditingController(text: current['patient_email'] as String? ?? '');
     final clinicPatientId = TextEditingController(
         text: current['clinic_patient_id'] as String? ?? '');
+    final caseId = TextEditingController(text: current['case_id'] as String?);
     final age = TextEditingController(text: current['age']?.toString() ?? '');
     final notes =
         TextEditingController(text: current['notes'] as String? ?? '');
@@ -1077,6 +1086,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
         context: context,
         builder: (dialogContext) => AlertDialog(
                 title: const Text('Edit patient'),
+                scrollable: true,
                 content: SizedBox(
                     width: 500,
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -1096,6 +1106,10 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                           controller: clinicPatientId,
                           decoration: const InputDecoration(
                               labelText: 'Clinic patient ID')),
+                      TextField(
+                          controller: caseId,
+                          decoration: const InputDecoration(
+                              labelText: 'Case ID (optional)')),
                       TextField(
                           controller: age,
                           keyboardType: TextInputType.number,
@@ -1119,6 +1133,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
         'patient_name': name.text.trim(),
         'patient_mobile_number': mobile.text.trim(),
         'patient_email': email.text.trim().isEmpty ? null : email.text.trim(),
+        'case_id': caseId.text.trim().isEmpty ? null : caseId.text.trim(),
         'clinic_patient_id': clinicPatientId.text.trim().isEmpty
             ? null
             : clinicPatientId.text.trim(),
@@ -1130,6 +1145,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
     mobile.dispose();
     email.dispose();
     clinicPatientId.dispose();
+    caseId.dispose();
     age.dispose();
     notes.dispose();
   }
@@ -1382,6 +1398,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                         children: [
                           Text('Name: ${data['patient_name']}'),
                           Text('Patient ID: ${data['patient_id'] ?? '—'}'),
+                          Text('Case ID: ${data['case_id'] ?? '—'}'),
                           Text(
                               'Clinic patient ID: ${data['clinic_patient_id'] ?? '—'}'),
                           Text(

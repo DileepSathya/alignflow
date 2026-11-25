@@ -304,6 +304,7 @@ class _CadOrdersPageState extends State<CadOrdersPage> {
                                                                   FontWeight
                                                                       .w700)),
                                                       subtitle: Text(
+                                                          'Case ID: ${orders[i]['case_id'] ?? '—'}\n'
                                                           '${(orders[i]['clinic'] as Map?)?['name'] ?? ''}  •  ${orderStatusLabel(orders[i]['status'])}'),
                                                       trailing: const Icon(
                                                           Icons.chevron_right))))
@@ -420,7 +421,7 @@ class _CadRow extends StatelessWidget {
       cell('PATIENT', '${data['patient_name'] ?? ''}', 14, bold: true),
       cell('CLINIC', '${clinic['name'] ?? ''}', 17,
           sub: header ? null : assignedClinicianName(data)),
-      cell('CASE', '', 9),
+      cell('CASE ID', '${data['case_id'] ?? '—'}', 9),
       cell('UPLOADED', uploaded, 10),
       cell('ASSIGNEE',
           '${(data['assigned_planner'] as Map?)?['name'] ?? 'Unassigned'}', 12),
