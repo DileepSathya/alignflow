@@ -903,6 +903,24 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
         {'status': 'plan_completed', if (quantity != null) 'aligner_quantity': quantity});
   }
 
+  Future<void> editAlignerQuantity() async {
+    int? quantity;
+    final current = order?['aligner_quantity'] as int?;
+    quantity = current;
+    final selected = await showDialog<int>(context: context, builder: (context) =>
+      StatefulBuilder(builder: (context, update) => AlertDialog(
+        title: const Text('Edit aligner count'),
+        content: TextFormField(initialValue: current?.toString(), autofocus: true,
+          keyboardType: TextInputType.number,
+          onChanged: (value) => update(() => quantity = int.tryParse(value))),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          FilledButton(onPressed: (quantity ?? 0) > 0 && quantity != current
+            ? () => Navigator.pop(context, quantity) : null, child: const Text('Save'))])));
+    if (selected == null || !mounted) return;
+    await action('PATCH', '/api/orders/${widget.orderId}/aligner-quantity',
+      {'aligner_quantity': selected});
+  }
+
   Future<void> approvePlan() async {
     final total = order?['aligner_quantity'] as int?;
     String mode = 'together';
@@ -1600,7 +1618,31 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
       'planner_assignment_open': const {'planning_in_progress', 'submitted', 'plan_completed', 'clinician_issues'}.contains(batches[number - 1]['status']),
       'issues': (order!['issues'] as List).where((i) => i['batch_number'] == number).toList(),
     };
+    final history = (data?['history'] as List? ?? const []).where((entry) =>
+        entry['batch_number'] == null || entry['batch_number'] == number).toList();
+    final cycleStart = history.lastIndexWhere((entry) => entry['status'] == 'planning_in_progress');
+    final progress = <String>{
+      for (final entry in history)
+        if (_progressSteps.take(4).any((step) => step.$1 == entry['status']))
+          entry['status'] as String,
+      for (final entry in history.skip(cycleStart < 0 ? 0 : cycleStart))
+        entry['status'] as String,
+    };
+    final stage = number != null ? batches![number - 1]['status'] : data?['status'];
+    final stageIndex = _progressSteps.lastIndexWhere((step) => step.$1 == stage);
+    if (stageIndex >= 0) {
+      progress.removeAll(_progressSteps.skip(stageIndex + 1).map((step) => step.$1));
+      progress.add(stage as String);
+    }
+    final revisedReview = data?['status'] == 'plan_completed' && data?['revision_approval_required'] == true;
     final openCount = (data?['issues'] as List? ?? []).where((i) => i['resolved_at'] == null).length;
+    final canEditAlignerQuantity = data != null && !busy &&
+        (widget.role == 'admin' || (widget.role == 'planning' &&
+          (order!['assigned_planner'] as Map?)?['id'] == widget.userId)) &&
+        (order!['issues'] as List).any((issue) =>
+          issue['raised_to'] == 'planning' && issue['resolved_at'] == null) &&
+        order!['first_batch_qc_approved_at'] == null &&
+        (batches == null || batches.isEmpty || batches.first['status'] != 'qc_approved');
     return Scaffold(
         appBar: AppBar(title: Text(widget.orderId)),
         body: data == null
@@ -1615,13 +1657,14 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
                     ListTile(selected: i == number, title: Text(batchLabel(data, i)),
                       onTap: busy || savedIssueId != null ? null : () => setState(() => selectedBatch = i)),
                 ],
-                if (data['aligner_quantity'] != null) Text("Total aligners: ${data['aligner_quantity']}"),
                 if (order!['status'] == 'issue_raised')
                   const Text('Order on hold until all open issues are resolved.'),
                 Text(data['patient_name'] as String,
                     style: const TextStyle(
                         fontSize: 26, fontWeight: FontWeight.bold)),
                 Text(_statuses[data['status']] ?? '${data['status']}'),
+                if (revisedReview)
+                  Text('Awaiting revised plan approval from marketing or ${assignedClinicianName(data) == '—' ? 'the case clinician' : assignedClinicianName(data)}'),
                 if (widget.role == 'admin') Text(stageEntryLabel(data)),
                 const SizedBox(height: 8),
                 Text('Created on ${activityTimestamp(data['created_at'])}'),
@@ -1654,14 +1697,11 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
                                         children: [
                                           Builder(builder: (context) {
                                             final step = _progressSteps[i];
-                                            final history =
-                                                data['history'] as List;
                                             final reached = step.$1 ==
                                                         'qc_approved' &&
                                                     data['status'] ==
                                                         'manufacture_completed' ||
-                                                history.any((entry) =>
-                                                    entry['status'] == step.$1);
+                                                progress.contains(step.$1);
                                             return Column(
                                                 crossAxisAlignment:
                                                     CrossAxisAlignment.start,
@@ -1705,6 +1745,33 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
                                           }),
                                         ])),
                             ]))),
+                if (data['aligner_quantity'] != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8, bottom: 8),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                      decoration: BoxDecoration(
+                        color: DemoStyle.surface2,
+                        borderRadius: BorderRadius.circular(14)),
+                      child: Row(children: [
+                        Expanded(child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Total aligners',
+                              style: TextStyle(fontSize: 13, color: DemoStyle.muted)),
+                            const SizedBox(height: 4),
+                            Text('${data['aligner_quantity']}',
+                              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+                          ])),
+                        if (canEditAlignerQuantity)
+                          TextButton.icon(
+                            onPressed: editAlignerQuantity,
+                            icon: const Icon(Icons.edit_outlined, size: 18),
+                            label: const Text('Edit'),
+                            style: TextButton.styleFrom(foregroundColor: DemoStyle.accent)),
+                      ])),
+                  ),
                 panel(
                     'patient & Casenotes',
                     Column(
@@ -1911,7 +1978,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
                       onPressed: busy
                           ? null
                           : approvePlan,
-                      child: const Text('Clinician approved')),
+                      child: Text(revisedReview ? 'Approve revised plan' : 'Approve plan')),
                 if (canReviewPlan &&
                     data['status'] == 'clinician_issues' &&
                     (data['issues'] as List).isEmpty)

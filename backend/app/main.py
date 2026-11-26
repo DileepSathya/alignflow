@@ -108,7 +108,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()],
     allow_credentials=False,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
 )
 
@@ -732,6 +732,10 @@ class StatusInput(BaseModel):
     dispatch_mode: str | None = Field(None, pattern=r"^(together|batches)$")
 
 
+class AlignerQuantityInput(BaseModel):
+    aligner_quantity: int = Field(ge=1, strict=True)
+
+
 def workflow_view(order, number):
     batches = order.get("batches", [])
     if number is None and not batches:
@@ -1043,7 +1047,7 @@ def public_order(doc, user=None):
         result["issues"].append({**issue, "number": number, "unread": unread,
                                  "can_resolve": bool(user and can_resolve_issue(doc, issue, user))})
     result["id"] = str(doc["_id"])
-    result["can_approve_revision"] = bool(user and case_clinician(doc, user))
+    result["can_approve_revision"] = bool(user and can_approve_revision(doc, user))
     result["planner_assignment_open"] = doc.get("status") in PLANNER_ASSIGNMENT_STEPS
     linked_ids = checklist_document_ids(doc)
     result["documents"] = [
@@ -1069,6 +1073,10 @@ def clinic_order_scope(user):
             raise HTTPException(status_code=403, detail="Clinician profile required")
         scope["clinician_id"] = user["clinician_id"]
     return scope
+
+
+def can_approve_revision(doc, user):
+    return user["role"] == "marketing" or case_clinician(doc, user)
 
 
 def case_clinician(doc, user):
@@ -1879,6 +1887,8 @@ def resolve_issue(order_id: str, issue_id: str, user=Depends(current_user), body
         if revise_plan:
             update["$set"]["revision_approval_required"] = True
         update["$push"] = {"history": {"status": return_status, "at": timestamp, "by": user["name"]}}
+        if issue.get("batch_number") is not None:
+            update["$push"]["history"]["batch_number"] = issue["batch_number"]
     details = {"issue_id": issue_id, "batch_number": issue.get("batch_number"), "requires_plan_revision": revision}
     if not remaining:
         details.update(from_status=issue_status, to_status=return_status)
@@ -1994,6 +2004,47 @@ def admin_assign_order(order_id: str, body: AdminAssignment, admin=Depends(admin
         raise HTTPException(status_code=409, detail="Order already assigned or unavailable")
     return {"order": public_order(updated, admin)}
 
+@app.patch("/api/orders/{order_id}/aligner-quantity")
+def change_aligner_quantity(order_id: str, body: AlignerQuantityInput, user=Depends(current_user)):
+    order = get_order(order_id, user)
+    if user["role"] != "admin" and not (user["role"] == "planning" and
+            (order.get("assigned_planner") or {}).get("id") == user["id"]):
+        raise HTTPException(403, "Only the assigned planner or admin can edit aligner quantity")
+    if not any(issue.get("raised_to") == "planning" and issue.get("resolved_at") is None
+               for issue in order.get("issues", [])):
+        raise HTTPException(409, "An open planning issue is required")
+    batches = order.get("batches") or []
+    if batches and batches[0]["status"] == "qc_approved":
+        raise HTTPException(409, "First batch has completed QC")
+    if order.get("first_batch_qc_approved_at"):
+        raise HTTPException(409, "First batch has completed QC")
+    total = body.aligner_quantity
+    if batches and total < len(batches):
+        raise HTTPException(422, "Aligner quantity must cover every batch")
+    revised_batches = [dict(batch) for batch in batches]
+    if revised_batches:
+        size, remainder = divmod(total, len(revised_batches))
+        for index, batch in enumerate(revised_batches):
+            batch["quantity"] = size + (remainder if index == len(revised_batches) - 1 else 0)
+    timestamp = now()
+    guard = {"order_id": order_id, "issue_revision": order.get("issue_revision"),
+             "status": order.get("status"),
+             "aligner_quantity": order.get("aligner_quantity"),
+             "issues": {"$elemMatch": {"raised_to": "planning", "resolved_at": None}},
+             "first_batch_qc_approved_at": {"$exists": False}}
+    if batches:
+        guard["batches.0.status"] = {"$ne": "qc_approved"}
+        guard["batches"] = batches
+    updated = order_store().find_one_and_update(guard, audited_update(
+        {"$set": {"aligner_quantity": total, "batches": revised_batches, "updated_at": timestamp}},
+        "Aligner quantity changed", user, timestamp,
+        old_quantity=order.get("aligner_quantity"), new_quantity=total),
+        return_document=ReturnDocument.AFTER)
+    if updated is None:
+        raise HTTPException(409, "Order changed; reload and try again")
+    return {"order": public_order(updated, user)}
+
+
 @app.post("/api/orders/{order_id}/status")
 def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
     order = get_order(order_id, user)
@@ -2046,9 +2097,11 @@ def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
                 raise HTTPException(422, "Enter the required aligner quantity")
             update_fields["aligner_quantity"] = body.aligner_quantity
     if target == "clinician_approved" and doc.get("revision_approval_required"):
-        if not case_clinician(order, user):
-            raise HTTPException(403, "The case clinician must approve the revised plan")
+        if not can_approve_revision(order, user):
+            raise HTTPException(403, "Marketing or the case clinician must approve the revised plan")
         update_fields["revision_approval_required"] = False
+    if target == "qc_approved" and (body.batch_number in (None, 1)):
+        update_fields["first_batch_qc_approved_at"] = timestamp
     if target == "clinician_approved" and not order.get("batches"):
         total = doc.get("aligner_quantity")
         if total and not body.dispatch_mode:
@@ -2065,7 +2118,7 @@ def change_status(order_id: str, body: StatusInput, user=Depends(current_user)):
     batch_transition(order, body.batch_number, target, update_fields, guard)
     updated = order_store().find_one_and_update(guard,
         audited_update({"$set": update_fields, "$push": {"history": {
-            "status": target, "at": timestamp, "by": user["name"]}}}, "Status changed", user, timestamp,
+            "status": target, "at": timestamp, "by": user["name"], "batch_number": body.batch_number}}}, "Status changed", user, timestamp,
             from_status=doc["status"], to_status=target, batch_number=body.batch_number),
         return_document=ReturnDocument.AFTER)
     if updated is None:

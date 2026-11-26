@@ -35,10 +35,10 @@ if errorlevel 1 (
 )
 
 start "V-Clear Aligners Backend" /D "%BACKEND%" cmd /k ""%PYTHON%" -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
-start "V-Clear Aligners Flutter Web" /D "%FLUTTER_APP%" cmd /k "flutter run -d chrome --web-port 8080"
+start "V-Clear Aligners Flutter Web" /D "%FLUTTER_APP%" cmd /k "flutter run -d chrome --web-hostname 127.0.0.1 --web-port 8080"
 
 echo Started backend and Flutter web in separate windows.
 echo Backend health: http://127.0.0.1:8000/health
 echo For your phone, enter this PC's Wi-Fi IPv4 address followed by :8000.
-echo Flutter web:    http://localhost:8080
+echo Flutter web:    http://127.0.0.1:8080/
 endlocal

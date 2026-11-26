@@ -54,6 +54,25 @@ class QcIssueTests(unittest.TestCase):
         return main.add_issue("ORD-000001", main.IssueInput(text="Remake tray", raised_to="production"),
                               user={"role": "planning", "name": "Reviewer"})
 
+    def test_batch_revision_reaches_clinician_queue_and_approval(self):
+        from datetime import datetime
+        case = self.order["order_id"]
+        self.order.update(current_batch=1, status="manufactured", clinician_id=7,
+                          assigned_planner={"id": 12}, created_at=datetime.now(),
+                          patient_name="Patient", batches=[{"status": "manufactured", "quantity": 4}])
+        planner = {"role": "planning", "id": 12, "name": "Planner"}
+        clinician = {"role": "clinician", "clinician_id": 7, "clinic_id": 1, "name": "Clinician"}
+        issue = main.add_issue(case, main.IssueInput(text="Revise plan", raised_to="planning", batch_number=1),
+                               user={"role": "admin", "name": "Admin"})
+        self.resolve(issue["issue_id"], "planning", revision=True, id=12)
+        main.change_status(case, main.StatusInput(status="plan_completed", batch_number=1), planner)
+        with patch.object(self.store, "find", create=True, return_value=[self.order]):
+            self.assertEqual(main.clinic_overview(clinician)["approvals"][0]["order_id"], case)
+        self.assertTrue(self.order["batches"][0]["revision_approval_required"])
+        main.change_status(case, main.StatusInput(status="clinician_approved", batch_number=1), clinician)
+        self.assertEqual(self.order["batches"][0]["status"], "clinician_approved")
+        self.assertFalse(self.order["batches"][0]["revision_approval_required"])
+
     def test_next_batch_waits_for_qc_approval(self):
         admin = {"id": 1, "name": "Admin", "role": "admin"}
         order_id = self.order["order_id"]
@@ -158,8 +177,9 @@ class QcIssueTests(unittest.TestCase):
                            {"role": "planning", "id": 12, "name": "P"})
         approval = main.StatusInput(status="clinician_approved", dispatch_mode="together")
         with self.assertRaises(HTTPException):
-            main.change_status(case, approval, {"role": "marketing", "name": "M"})
-        main.change_status(case, approval, {"role": "clinician", "clinician_id": 7, "name": "C"})
+            main.change_status(case, approval, {"role": "clinician", "clinician_id": 8, "name": "C"})
+        main.change_status(case, approval, {"role": "marketing", "name": "M"})
+        self.assertEqual(self.order["status"], "clinician_approved")
         self.assertFalse(self.order["revision_approval_required"])
 
     def test_legacy_feedback_can_still_be_resolved(self):
