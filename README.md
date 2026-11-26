@@ -122,3 +122,84 @@ already in Planning or later stages retain their existing workflow.
 
 
 Swagger UI visual api calls http://127.0.0.1:8000/docs
+
+## Docker installation
+
+Build the release on a machine with Flutter and Docker running Linux containers.
+From the repository root in PowerShell:
+
+```powershell
+.\scripts\build_docker.ps1
+```
+
+On a machine with the image loaded, start the full application:
+
+create container
+
+```powershell
+docker run -d --name vclear --restart unless-stopped --stop-timeout 60 -p 127.0.0.1:8080:8000 -v vclear-data:/storage vclear-aligners:0.1.0
+```
+----------or----------
+docker run -d --name vclear -p 8080:8000 vclear-aligners:0.1.0
+
+stop container
+
+doker stop <contrainerid>
+
+start container
+doker start <contrainerid>
+
+Open <http://localhost:8080>. The initial login is `admin` / `admin`.
+The web client and API share this port. For access from a phone on a trusted LAN,
+publish the PC's LAN IP instead of `127.0.0.1` and enter `PC-IP:8080` in the Android app.
+Change the seeded password before sharing access. The example serves HTTP.
+
+PostgreSQL uses a private Unix socket. MongoDB listens on container loopback and
+uses a password generated inside the volume. First startup creates the PostgreSQL
+schema. MongoDB creates the order collection and indexes on first use. The
+`vclear-data` volume holds both databases, their initialization state, and uploads.
+Use `docker logs vclear` for startup diagnostics and `docker start vclear` to
+restart a stopped installation. Use one running container per data volume.
+
+**Share the image offline.** Run `docker save -o vclear-aligners-0.1.0.tar vclear-aligners:0.1.0`
+and give the tar file to the recipient. They run `docker load -i vclear-aligners-0.1.0.tar`
+and the startup command above. They need only Docker and a browser.
+Each new volume starts a separate installation.
+
+**Back up before upgrading.** From a writable directory, stop the application
+and archive the complete volume so both databases and files are consistent:
+
+```powershell
+docker stop -t 60 vclear
+docker run --rm --entrypoint tar -v vclear-data:/storage:ro -v "${PWD}:/backup" vclear-aligners:0.1.0 -czf /backup/vclear-data-backup.tar.gz -C /storage .
+docker start vclear
+```
+
+Choose a new backup filename for each backup. The archive contains application
+data and credentials. To restore, extract it into a new empty volume using
+the same image version, then start a container with that volume:
+
+```powershell
+docker volume create vclear-restored
+docker run --rm --entrypoint tar -v vclear-restored:/storage -v "${PWD}:/backup:ro" vclear-aligners:0.1.0 -xzf /backup/vclear-data-backup.tar.gz -C /storage
+```
+
+For a compatible application upgrade, stop the old container, remove the stopped
+container with `docker rm vclear`, and repeat the startup command with the new
+image tag and the original volume name. Database major-version changes require
+their own migration. Existing Windows installation data requires a separate import.
+
+
+
+
+how to publish in docker
+
+docker login
+docker tag vclear-aligners:0.1.0 <userid>/vclear-aligners:0.1.0
+docker push <userid>/vclear-aligners:0.1.0
+
+---- To pull the docker and run---
+
+
+docker pull <userid>/vclear-aligners:0.1.0
+docker run -d -p 8080:8000 <userid>/vclear-aligners:0.1.0

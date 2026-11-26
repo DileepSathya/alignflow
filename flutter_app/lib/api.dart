@@ -8,6 +8,7 @@ import 'package:file_picker/file_picker.dart';
 const defaultApiBase = String.fromEnvironment('API_BASE_URL',
     defaultValue: 'http://localhost:8000');
 const _serverAddressKey = 'server_address';
+const sameOriginApi = bool.fromEnvironment('SAME_ORIGIN_API');
 
 class ApiException implements Exception {
   final String message;
@@ -46,16 +47,19 @@ String normalizeServerAddress(String input) {
 }
 
 class Api {
-  String serverAddress = defaultApiBase;
+  String serverAddress = sameOriginApi ? Uri.base.origin : defaultApiBase;
   String? token;
 
   Future<void> restore() async {
     final prefs = await SharedPreferences.getInstance();
-    serverAddress = prefs.getString(_serverAddressKey) ?? defaultApiBase;
+    if (!sameOriginApi) {
+      serverAddress = prefs.getString(_serverAddressKey) ?? defaultApiBase;
+    }
     token = prefs.getString('token');
   }
 
   Future<void> useServer(String address) async {
+    if (sameOriginApi) return;
     final normalized = normalizeServerAddress(address);
     final prefs = await SharedPreferences.getInstance();
     if (serverAddress != normalized) {

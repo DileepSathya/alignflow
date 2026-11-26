@@ -101,7 +101,7 @@ class _LoginPageState extends State<LoginPage> {
                           'Sign in with the username and password given by your admin.',
                           style: TextStyle(color: DemoStyle.muted)),
                       const SizedBox(height: 20),
-                      if (showServer) ...[
+                      if (!sameOriginApi && showServer) ...[
                         TextField(
                             controller: server,
                             decoration: const InputDecoration(
@@ -147,7 +147,7 @@ class _LoginPageState extends State<LoginPage> {
                                 },
                           child: const Text('Register your clinic')),
                       const SizedBox(height: 14),
-                      TextButton(
+                      if (!sameOriginApi) TextButton(
                           onPressed: () =>
                               setState(() => showServer = !showServer),
                           child: Text(showServer
