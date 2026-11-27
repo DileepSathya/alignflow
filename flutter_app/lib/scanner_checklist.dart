@@ -171,7 +171,7 @@ class _ScannerChecklistState extends State<ScannerChecklist> {
             child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('Required items — $completed of ${items.length}',
+                  Text('Mandatory files — $completed of ${items.length}',
                       style: Theme.of(context).textTheme.titleLarge),
                   if (canEdit)
                     const Text(

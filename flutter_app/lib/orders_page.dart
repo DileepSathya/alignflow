@@ -157,6 +157,7 @@ class _OrdersPageState extends State<OrdersPage> {
     final issueQueue = widget.dashboardFilters.containsKey('issue_queue');
     final narrow = MediaQuery.sizeOf(context).width < 700;
     final desktop = MediaQuery.sizeOf(context).width >= 1050;
+    final clinicAdmin = widget.user['role'] == 'clinic_admin';
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Wrap(
           alignment: WrapAlignment.spaceBetween,
@@ -235,7 +236,7 @@ class _OrdersPageState extends State<OrdersPage> {
                                                   const EdgeInsets.symmetric(
                                                       horizontal: 16,
                                                       vertical: 12),
-                                              child: const Row(children: [
+                                              child: Row(children: [
                                                 Expanded(
                                                     flex: 2,
                                                     child: _OrderHeading(
@@ -247,7 +248,7 @@ class _OrdersPageState extends State<OrdersPage> {
                                                 Expanded(
                                                     flex: 3,
                                                     child: _OrderHeading(
-                                                        'CLINIC NAME')),
+                                                        clinicAdmin ? 'DOCTOR' : 'CLINIC NAME')),
                                                 Expanded(
                                                     flex: 3,
                                                     child: _OrderHeading(
@@ -292,7 +293,9 @@ class _OrdersPageState extends State<OrdersPage> {
                                                                           .w700))),
                                                       Expanded(
                                                           flex: 3,
-                                                          child: Column(
+                                                          child: clinicAdmin
+                                                              ? Text(assignedClinicianName(order), style: const TextStyle(color: DemoStyle.muted))
+                                                              : Column(
                                                               crossAxisAlignment:
                                                                   CrossAxisAlignment
                                                                       .start,
@@ -353,8 +356,9 @@ class _OrdersPageState extends State<OrdersPage> {
                                                 style: const TextStyle(
                                                     fontWeight:
                                                         FontWeight.w600)),
-                                            subtitle: Text(
-                                                '${(order['clinic'] as Map)['name']}\n${assignedClinicianName(order)}'),
+                                            subtitle: Text(clinicAdmin
+                                                ? assignedClinicianName(order)
+                                                : '${(order['clinic'] as Map)['name']}\n${assignedClinicianName(order)}'),
                                             trailing: _OrderStatus(
                                                 status: '${order['status']}'));
                                       }))))),
@@ -1809,7 +1813,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
                         ]), section: 'clinic'),
                 if (data['checklist'] != null)
                   panel(
-                      'Required items',
+                      'Mandatory files',
                       ScannerChecklist(
                           api: widget.api,
                           order: data,
