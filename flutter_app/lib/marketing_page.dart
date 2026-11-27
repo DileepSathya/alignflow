@@ -307,7 +307,7 @@ class _MarketingPageState extends State<MarketingPage> {
                             controller: search,
                             decoration: const InputDecoration(
                                 prefixIcon: Icon(Icons.search),
-                                hintText: 'Search clinic, clinician or area',
+                                hintText: 'Search clinic, doctor or area',
                                 filled: true,
                                 fillColor: Colors.white)),
                         const SizedBox(height: 18),
@@ -391,7 +391,7 @@ class _MarketingPageState extends State<MarketingPage> {
                                                     Expanded(
                                                         flex: 2,
                                                         child:
-                                                            Text('CLINICIANS')),
+                                                            Text('DOCTORS')),
                                                     Expanded(
                                                         flex: 3,
                                                         child: Text('CONTACT')),
@@ -461,8 +461,8 @@ class _ClinicRowState extends State<ClinicRow> {
                       child: Row(children: [
                         IconButton(
                             tooltip: expanded
-                                ? 'Collapse clinicians'
-                                : 'Expand clinicians',
+                                ? 'Collapse doctors'
+                                : 'Expand doctors',
                             icon: Icon(expanded ? Icons.remove : Icons.add),
                             onPressed: () =>
                                 setState(() => expanded = !expanded)),
@@ -474,7 +474,7 @@ class _ClinicRowState extends State<ClinicRow> {
                   Expanded(
                       flex: 2,
                       child: Text(
-                          '${((widget.clinic['clinicians'] as List?) ?? []).length} clinicians')),
+                          '${((widget.clinic['clinicians'] as List?) ?? []).length} doctors')),
                   Expanded(
                       flex: 3,
                       child: Column(
@@ -522,7 +522,7 @@ Widget _clinicianDetails(List clinicians) => Padding(
       child: clinicians.isEmpty
           ? const Align(
               alignment: Alignment.centerLeft,
-              child: Text('No clinicians added yet.'))
+              child: Text('No doctors added yet.'))
           : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               for (final person in clinicians)
                 Padding(
@@ -627,7 +627,7 @@ class _ClinicDialogState extends State<ClinicDialog> {
 
   Future<void> save() async {
     if (needsAdmin && clinicians.isEmpty) {
-      setState(() => error = 'Add a clinic admin clinician.');
+      setState(() => error = 'Add a clinic admin doctor.');
       return;
     }
     if (needsAdmin && adminUsername.text.trim().isEmpty) {
@@ -640,7 +640,7 @@ class _ClinicDialogState extends State<ClinicDialog> {
       return;
     }
     if (needsAdmin && clinicians.first.email.text.trim().isEmpty) {
-      setState(() => error = 'Enter the clinic admin clinician email.');
+      setState(() => error = 'Enter the clinic admin doctor email.');
       return;
     }
     if ([name, contact, area].any((c) => c.text.trim().isEmpty)) {
@@ -656,7 +656,7 @@ class _ClinicDialogState extends State<ClinicDialog> {
       if (clinician.name.text.trim().isEmpty ||
           clinician.mobile.text.trim().isEmpty) {
         setState(
-            () => error = 'Complete each clinician name and mobile number.');
+            () => error = 'Complete each doctor name and mobile number.');
         return;
       }
       if (!clinician.hasLogin &&
@@ -673,7 +673,7 @@ class _ClinicDialogState extends State<ClinicDialog> {
       final address = clinician.email.text.trim();
       if (address.isNotEmpty &&
           !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(address)) {
-        setState(() => error = 'Enter a valid clinician email address.');
+        setState(() => error = 'Enter a valid doctor email address.');
         return;
       }
     }
@@ -740,7 +740,7 @@ class _ClinicDialogState extends State<ClinicDialog> {
                       decoration:
                           const InputDecoration(labelText: 'Area / city')),
                   const SizedBox(height: 18),
-                  Text('Clinicians',
+                  Text('Doctors',
                       style: Theme.of(context).textTheme.titleMedium),
                   if (needsAdmin) ...[
                     TextField(
@@ -752,7 +752,7 @@ class _ClinicDialogState extends State<ClinicDialog> {
                         obscureText: true,
                         decoration: const InputDecoration(
                             labelText: 'Clinic admin password')),
-                    const Text('The first clinician is the clinic admin.'),
+                    const Text('The first doctor is the clinic admin.'),
                   ],
                   for (final clinician in clinicians) ...[
                     const SizedBox(height: 12),
@@ -763,7 +763,7 @@ class _ClinicDialogState extends State<ClinicDialog> {
                               decoration:
                                   const InputDecoration(labelText: 'Name'))),
                       IconButton(
-                          tooltip: 'Remove clinician',
+                          tooltip: 'Remove doctor',
                           icon: const Icon(Icons.delete_outline),
                           onPressed: clinician.hasLogin ||
                                   (needsAdmin && clinician == clinicians.first)
@@ -811,7 +811,7 @@ class _ClinicDialogState extends State<ClinicDialog> {
                       onPressed: () =>
                           setState(() => clinicians.add(_ClinicianFields())),
                       icon: const Icon(Icons.add),
-                      label: const Text('Add clinician')),
+                      label: const Text('Add doctor')),
                   if (error != null)
                     Padding(
                         padding: const EdgeInsets.only(top: 12),

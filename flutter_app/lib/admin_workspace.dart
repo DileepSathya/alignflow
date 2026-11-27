@@ -299,7 +299,7 @@ class _AdminPlanningViewState extends State<AdminPlanningView> {
                 ('document_review', 'Document review'),
                 ('plan_pending', 'Unassigned'),
                 ('planning_in_progress', 'Planning in progress'),
-                ('clinical_approval_pending', 'Clinician review pending'),
+                ('clinical_approval_pending', 'Doctor review pending'),
                 ('issue_raised', 'Issue raised'),
               ])
                 ChoiceChip(
@@ -394,7 +394,7 @@ class _AdminOrdersViewState extends State<AdminOrdersView> {
       widget.marketerId == null && widget.initialClinicId == null;
   static const metrics = {
     '': ('total_orders', 'Total orders'),
-    'review_pending': ('review_pending', 'Clinician reviews pending'),
+    'review_pending': ('review_pending', 'Doctor reviews pending'),
     'open_issues': ('open_issue_orders', 'Orders with open issues'),
     'scanner': ('scanner', 'Scanner review'),
     'document_review': ('document_review', 'Document review'),
@@ -537,7 +537,7 @@ class _AdminOrdersViewState extends State<AdminOrdersView> {
         .where((issue) => issue['resolved_at'] == null)
         .length;
     return switch (bucket) {
-      'review_pending' => 'Awaiting clinician review · $age',
+      'review_pending' => 'Awaiting doctor review · $age',
       'open_issues' => '$openIssues open issues · $age',
       _ => age,
     };
@@ -671,14 +671,14 @@ class _AdminOrdersViewState extends State<AdminOrdersView> {
                                 child: Text('Planning in progress')),
                             DropdownMenuItem(
                                 value: 'plan_completed',
-                                child: Text('Clinician review pending')),
+                                child: Text('Doctor review pending')),
                             DropdownMenuItem(value: 'issue_raised', child: Text('Issue Raised')),
                             DropdownMenuItem(
                                 value: 'clinician_issues',
                                 child: Text('Clinical issues')),
                             DropdownMenuItem(
                                 value: 'clinician_approved',
-                                child: Text('Clinician approved')),
+                                child: Text('Doctor approved')),
                             DropdownMenuItem(
                                 value: 'manufactured',
                                 child: Text('Manufactured')),
@@ -910,7 +910,7 @@ class _AdminOrderRow extends StatelessWidget {
           ? 'green'
           : 'blue';
   static String _currentStatusLabel(String status) => switch (status) {
-        'plan_completed' => 'Clinician review pending',
+        'plan_completed' => 'Doctor review pending',
         'qc_approved' || 'manufacture_completed' => 'Manufacture completed',
         _ => orderStatusLabel(status),
       };

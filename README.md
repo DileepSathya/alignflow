@@ -201,5 +201,5 @@ docker push <userid>/vclear-aligners:0.1.0
 ---- To pull the docker and run---
 
 
-docker pull <userid>/vclear-aligners:0.1.0
-docker run -d -p 8080:8000 <userid>/vclear-aligners:0.1.0
+docker pull ds2205/vclear-aligners:0.1.0
+docker run -d -p 8080:8000 ds2205/vclear-aligners:0.1.0

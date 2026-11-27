@@ -57,7 +57,7 @@ class _ClinicDashboardState extends State<ClinicDashboard> {
     for (final p in widget.clinic['clinicians'] as List? ?? []) {
       if (p['clinician_id'] == id) return p['name'].toString();
     }
-    return 'Unassigned clinician';
+    return 'Unassigned doctor';
   }
 
   String age(Object? value) {
@@ -137,7 +137,7 @@ class _ClinicDashboardState extends State<ClinicDashboard> {
         if (widget.user['role'] == 'clinic_admin')
           OutlinedButton(
               onPressed: widget.onAddClinician,
-              child: const Text('Add clinician')),
+              child: const Text('Add doctor')),
         OutlinedButton(
             onPressed: () => orders('All orders', {}),
             child: const Text('View all orders')),
@@ -208,7 +208,7 @@ class _ClinicDashboardState extends State<ClinicDashboard> {
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Clinician overview',
+                      Text('Doctor overview',
                           style: Theme.of(context).textTheme.titleLarge),
                       for (final p
                           in widget.clinic['clinicians'] as List? ?? [])

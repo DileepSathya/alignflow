@@ -100,7 +100,7 @@ class _ClinicWorkspaceState extends State<ClinicWorkspace> {
                                   fontSize: 12, fontWeight: FontWeight.w700)),
                           Text(
                               widget.user['role'] == 'clinician'
-                                  ? 'Clinician'
+                                  ? 'Doctor'
                                   : 'Clinic admin',
                               style: TextStyle(
                                   fontSize: 11, color: DemoStyle.muted)),
@@ -113,7 +113,7 @@ class _ClinicWorkspaceState extends State<ClinicWorkspace> {
                     ('Dashboard', Icons.dashboard_outlined),
                     ('Orders', Icons.receipt_long_outlined),
                     if (widget.user['role'] == 'clinic_admin')
-                      ('Clinicians', Icons.people_outline)
+                      ('Doctors', Icons.people_outline)
                   ])
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 2),
@@ -139,7 +139,7 @@ class _ClinicWorkspaceState extends State<ClinicWorkspace> {
                                 color: section == item.$1
                                     ? DemoStyle.accent
                                     : DemoStyle.ink)),
-                        trailing: item.$1 == 'Clinicians'
+                        trailing: item.$1 == 'Doctors'
                             ? Text('${people.length}',
                                 style: const TextStyle(fontSize: 11))
                             : null,
@@ -148,7 +148,7 @@ class _ClinicWorkspaceState extends State<ClinicWorkspace> {
                           AppRouter.of(context).go(const {
                             'Dashboard': '/clinic/dashboard',
                             'Orders': '/clinic/orders',
-                            'Clinicians': '/clinic/clinicians'
+                            'Doctors': '/clinic/clinicians'
                           }[item.$1]!);
                         },
                       ),
@@ -192,15 +192,15 @@ class _ClinicWorkspaceState extends State<ClinicWorkspace> {
                                 Row(children: [
                                   Expanded(
                                       child: DemoPageHeading(
-                                    title: 'Clinicians',
+                                    title: 'Doctors',
                                     subtitle:
-                                        'Manage clinicians at ${clinic!['clinic_name']}.',
+                                        'Manage doctors at ${clinic!['clinic_name']}.',
                                   )),
                                   FilledButton.icon(
                                     onPressed: add,
                                     icon: const Icon(Icons.add),
                                     label:
-                                        Text(compact ? 'Add' : 'Add clinician'),
+                                        Text(compact ? 'Add' : 'Add doctor'),
                                   ),
                                 ]),
                                 const SizedBox(height: 18),
@@ -215,7 +215,7 @@ class _ClinicWorkspaceState extends State<ClinicWorkspace> {
                                     child: people.isEmpty
                                         ? const Center(
                                             child: Text(
-                                                'No clinicians yet. Add your first clinician.'))
+                                                'No doctors yet. Add your first doctor.'))
                                         : Card(
                                             child: ListView.separated(
                                             itemCount: people.length,
@@ -302,7 +302,7 @@ class _ClinicianDialogState extends State<_ClinicianDialog> {
   Widget build(BuildContext context) => AlertDialog(
         scrollable: true,
         title: Text(widget.person == null
-            ? 'Add clinician'
+            ? 'Add doctor'
             : 'Create login for ${widget.person!['name']}'),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
           for (final field in {

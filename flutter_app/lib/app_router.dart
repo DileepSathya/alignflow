@@ -239,7 +239,7 @@ class AppRouter extends RouterDelegate<AppRoutePath>
           initialSection: const {
             '/clinic/dashboard': 'Dashboard',
             '/clinic/orders': 'Orders',
-            '/clinic/clinicians': 'Clinicians'
+            '/clinic/clinicians': 'Doctors'
           }[safeSection]!),
       'planning' || 'production' when safeSection.endsWith('/qc') =>
         QcOrdersPage(api: api, user: user!, onLogout: logout),

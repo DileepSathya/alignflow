@@ -15,7 +15,7 @@ const teamDescriptions = {
   'scanner':
       'Upload missing documents, verify the checklist and approve orders for Planning.',
   'planning':
-      'Review submitted cases, prepare plans and handle clinician feedback.',
+      'Review submitted cases, prepare plans and handle doctor feedback.',
   'production':
       'Orders approved by the clinic and assigned by the Planning team appear here.',
 };
@@ -217,7 +217,7 @@ class _TeamPageState extends State<TeamPage> {
                                             child: Text('Plan completed')),
                                         DropdownMenuItem(
                                             value: 'clinician_approved',
-                                            child: Text('Clinician approved')),
+                                            child: Text('Doctor approved')),
                                         DropdownMenuItem(
                                             value: 'manufactured',
                                             child: Text('QC approval pending')),

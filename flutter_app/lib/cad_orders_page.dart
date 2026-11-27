@@ -12,7 +12,7 @@ const _tabs = <(String, String)>[
   ('plan_pending', 'Unassigned'),
   ('planning_in_progress', 'Planning in progress'),
   ('mine', 'My orders'),
-  ('clinical_approval_pending', 'Clinician review pending'),
+  ('clinical_approval_pending', 'Doctor review pending'),
   ('issue_raised', 'Issue raised'),
   ('approved', 'Approved'),
   ('cancelled', 'Cancelled'),
@@ -191,7 +191,7 @@ class _CadOrdersPageState extends State<CadOrdersPage> {
                           const DemoPageHeading(
                               title: 'Orders',
                               subtitle:
-                                  'New orders appear in Unassigned. Claim an order to start planning, then complete the plan for clinician review.'),
+                                  'New orders appear in Unassigned. Claim an order to start planning, then complete the plan for doctor review.'),
                           const SizedBox(height: 20),
                           SingleChildScrollView(
                               scrollDirection: Axis.horizontal,
@@ -476,12 +476,12 @@ class _CadPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = label == 'Cancelled'
         ? const Color(0xFFB3261E)
-        : {'Clinician approved', 'QC approved'}.contains(label)
+        : {'Doctor approved', 'QC approved'}.contains(label)
             ? const Color(0xFF1B7F4B)
             : DemoStyle.muted;
     final background = label == 'Cancelled'
         ? const Color(0xFFFCE4E2)
-        : {'Clinician approved', 'QC approved'}.contains(label)
+        : {'Doctor approved', 'QC approved'}.contains(label)
             ? const Color(0xFFDCF2E5)
             : DemoStyle.surface2;
     return Container(

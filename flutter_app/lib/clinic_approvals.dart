@@ -92,9 +92,9 @@ class _ClinicApprovalsState extends State<ClinicApprovals> {
                     for (final person in clinic['clinicians'] as List) ...[
                       const Divider(),
                       for (final field in {
-                        'Clinician name': person['name'],
-                        'Clinician mobile': person['mobile_number'],
-                        'Clinician email': person['email'],
+                        'Doctor name': person['name'],
+                        'Doctor mobile': person['mobile_number'],
+                        'Doctor email': person['email'],
                         'Clinical role': person['clinical_role'],
                         'Username': person['username'],
                       }.entries)

@@ -61,8 +61,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.bySemanticsLabel(brandName), findsOneWidget);
     expect(find.text('My dashboard'), findsOneWidget);
-    expect(find.text('Add clinician'), findsNothing);
-    expect(find.text('Clinicians'), findsNothing);
+    expect(find.text('Add doctor'), findsNothing);
+    expect(find.text('Doctors'), findsNothing);
     tester.view.physicalSize = const Size(390, 844);
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.menu));

@@ -15,10 +15,10 @@ const _statuses = <String, String>{
   'planner_document_review': 'Planner document review',
   'submitted': 'Ready for Planning',
   'planning_in_progress': 'Planning in progress',
-  'plan_completed': 'Clinician review pending',
+  'plan_completed': 'Doctor review pending',
   'issue_raised': 'Issue Raised',
-  'clinician_issues': 'Clinician raised issues',
-  'clinician_approved': 'Clinician approved',
+  'clinician_issues': 'Doctor raised issues',
+  'clinician_approved': 'Doctor approved',
   'manufacturing_in_process': 'Manufacturing in process',
   'manufactured': 'QC approval pending',
   'qc_issues': 'QC raised issue',
@@ -50,7 +50,7 @@ String assignedClinicianName(Map order) {
 
 const issueRecipients = {
   'marketing': 'Marketing', 'scanner': 'Scanner', 'planning': 'Planning',
-  'production': 'Production', 'clinician': 'Case clinician',
+  'production': 'Production', 'clinician': 'Case doctor',
 };
 
 const _progressSteps = <(String, String)>[
@@ -60,9 +60,9 @@ const _progressSteps = <(String, String)>[
   ('submitted', 'Documents approved'),
   ('planning_in_progress', 'Planning in progress'),
   ('plan_completed', 'Plan completed'),
-  ('plan_completed', 'Clinician review pending'),
-  ('clinician_issues', 'Clinician raised issues'),
-  ('clinician_approved', 'Clinician approved'),
+  ('plan_completed', 'Doctor review pending'),
+  ('clinician_issues', 'Doctor raised issues'),
+  ('clinician_approved', 'Doctor approved'),
   ('manufacturing_in_process', 'Manufacturing in process'),
   ('manufactured', 'Manufactured'),
   ('manufactured', 'QC approval pending'),
@@ -554,7 +554,7 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
         clinicId == null ||
         clinicianId == null) {
       setState(() => error =
-          'Enter patient name and mobile, then select a clinic and clinician.');
+          'Enter patient name and mobile, then select a clinic and doctor.');
       return;
     }
     final parsedAge =
@@ -682,7 +682,7 @@ class _CreateOrderDialogState extends State<CreateOrderDialog> {
                     DropdownButtonFormField<int>(
                         initialValue: clinicianId,
                         decoration:
-                            const InputDecoration(labelText: 'Clinician *'),
+                            const InputDecoration(labelText: 'Doctor *'),
                         items: ((clinic['clinicians'] as List?) ?? [])
                             .map((person) => DropdownMenuItem<int>(
                                 value: person['clinician_id'] as int,
@@ -1664,7 +1664,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
                         fontSize: 26, fontWeight: FontWeight.bold)),
                 Text(_statuses[data['status']] ?? '${data['status']}'),
                 if (revisedReview)
-                  Text('Awaiting revised plan approval from marketing or ${assignedClinicianName(data) == '—' ? 'the case clinician' : assignedClinicianName(data)}'),
+                  Text('Awaiting revised plan approval from marketing or ${assignedClinicianName(data) == '—' ? 'the case doctor' : assignedClinicianName(data)}'),
                 if (widget.role == 'admin') Text(stageEntryLabel(data)),
                 const SizedBox(height: 8),
                 Text('Created on ${activityTimestamp(data['created_at'])}'),
@@ -1800,7 +1800,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('Name: ${(data['clinic'] as Map)['name']}'),
-                          Text('Clinician: ${assignedClinicianName(data)}'),
+                          Text('Doctor: ${assignedClinicianName(data)}'),
                           Text(
                               'Contact: ${(data['clinic'] as Map)['contact']}'),
                           Text(

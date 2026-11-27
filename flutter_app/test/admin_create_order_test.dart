@@ -48,7 +48,7 @@ void main() {
       home: Scaffold(body: AdminOrdersView(api: api, userId: 7)),
     ));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Clinician reviews pending'));
+    await tester.tap(find.text('Doctor reviews pending'));
     await tester.pumpAndSettle();
     final filters = api.listQueries.last.queryParameters;
     expect(filters, containsPair('admin_bucket', 'review_pending'));
@@ -94,7 +94,7 @@ void main() {
         of: find.byType(AlertDialog), matching: find.byType(TextField));
     await tester.enterText(fields.at(0), 'Patient');
     await tester.enterText(fields.at(1), '5551234');
-    final clinician = find.widgetWithText(DropdownButtonFormField<int>, 'Clinician *');
+    final clinician = find.widgetWithText(DropdownButtonFormField<int>, 'Doctor *');
     await tester.ensureVisible(clinician);
     await tester.tap(clinician);
     await tester.pumpAndSettle();
