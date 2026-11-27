@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS clinics (
     clinic_name TEXT NOT NULL,
     contact_number TEXT NOT NULL,
     email TEXT,
-    area TEXT NOT NULL,
+    business_address TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     signup_source TEXT NOT NULL DEFAULT 'marketing',

@@ -1809,7 +1809,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> with WidgetsBindingOb
                               'Contact: ${(data['clinic'] as Map)['contact']}'),
                           Text(
                               'Email: ${(data['clinic'] as Map)['email'] ?? '—'}'),
-                          Text('Area: ${(data['clinic'] as Map)['area']}'),
+                          Text('Business address: ${(data['clinic'] as Map)['business_address']}'),
                         ]), section: 'clinic'),
                 if (data['checklist'] != null)
                   panel(

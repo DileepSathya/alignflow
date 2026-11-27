@@ -15,7 +15,7 @@ class AdminOrderCreationTests(unittest.TestCase):
         self.conn = MagicMock()
         self.cursor = self.conn.cursor.return_value.__enter__.return_value
         self.cursor.fetchone.side_effect = [
-            {"clinic_name": "Clinic", "contact_number": "123", "email": None, "area": "West"},
+            {"clinic_name": "Clinic", "contact_number": "123", "email": None, "business_address": "West"},
             {"patient_id": 1, "clinic_patient_id": None, "name": "Patient",
              "mobile_number": "5551234"},
         ]

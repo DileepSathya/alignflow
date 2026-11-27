@@ -261,7 +261,7 @@ class _MarketingPageState extends State<MarketingPage> {
     final visible = clinics
         .where((c) => [
               c['clinic_name'],
-              c['area'],
+              c['business_address'],
               ...((c['clinicians'] as List?) ?? [])
                   .map((person) => person['name'])
             ].any((v) => (v?.toString().toLowerCase() ?? '').contains(query)))
@@ -307,7 +307,7 @@ class _MarketingPageState extends State<MarketingPage> {
                             controller: search,
                             decoration: const InputDecoration(
                                 prefixIcon: Icon(Icons.search),
-                                hintText: 'Search clinic, doctor or area',
+                                hintText: 'Search clinic, doctor or address',
                                 filled: true,
                                 fillColor: Colors.white)),
                         const SizedBox(height: 18),
@@ -358,7 +358,7 @@ class _MarketingPageState extends State<MarketingPage> {
                                                         title: Text(visible[i]
                                                                 ['clinic_name']
                                                             as String),
-                                                        subtitle: Text('${visible[i]['contact_number']} • ${visible[i]['area']}'),
+                                                        subtitle: Text('${visible[i]['contact_number']} • ${visible[i]['business_address']}'),
                                                         children: [
                                                       _clinicianDetails(visible[
                                                                       i]
@@ -488,7 +488,7 @@ class _ClinicRowState extends State<ClinicRow> {
                                       fontSize: 11, color: Colors.grey)),
                           ])),
                   Expanded(
-                      flex: 2, child: Text(widget.clinic['area'] as String)),
+                      flex: 2, child: Text(widget.clinic['business_address'] as String)),
                   SizedBox(
                       width: 140,
                       child: hovered
@@ -604,8 +604,8 @@ class _ClinicDialogState extends State<ClinicDialog> {
       text: widget.clinic?['contact_number'] as String? ?? '');
   late final email =
       TextEditingController(text: widget.clinic?['email'] as String? ?? '');
-  late final area =
-      TextEditingController(text: widget.clinic?['area'] as String? ?? '');
+  late final businessAddress =
+      TextEditingController(text: widget.clinic?['business_address'] as String? ?? '');
   final adminUsername = TextEditingController();
   final adminPassword = TextEditingController();
   bool saving = false;
@@ -616,7 +616,7 @@ class _ClinicDialogState extends State<ClinicDialog> {
     name.dispose();
     contact.dispose();
     email.dispose();
-    area.dispose();
+    businessAddress.dispose();
     adminUsername.dispose();
     adminPassword.dispose();
     for (final clinician in clinicians) {
@@ -643,7 +643,7 @@ class _ClinicDialogState extends State<ClinicDialog> {
       setState(() => error = 'Enter the clinic admin doctor email.');
       return;
     }
-    if ([name, contact, area].any((c) => c.text.trim().isEmpty)) {
+    if ([name, contact, businessAddress].any((c) => c.text.trim().isEmpty)) {
       setState(() => error = 'Complete all required fields.');
       return;
     }
@@ -691,7 +691,7 @@ class _ClinicDialogState extends State<ClinicDialog> {
             'clinic_name': name.text.trim(),
             'contact_number': contact.text.trim(),
             'email': email.text.trim(),
-            'area': area.text.trim(),
+            'business_address': businessAddress.text.trim(),
             'clinicians':
                 clinicians.map((clinician) => clinician.toJson()).toList(),
             if (needsAdmin) 'admin_username': adminUsername.text.trim(),
@@ -736,9 +736,9 @@ class _ClinicDialogState extends State<ClinicDialog> {
                           const InputDecoration(labelText: 'Email (optional)')),
                   const SizedBox(height: 12),
                   TextField(
-                      controller: area,
+                      controller: businessAddress,
                       decoration:
-                          const InputDecoration(labelText: 'Area / city')),
+                          const InputDecoration(labelText: 'Business address')),
                   const SizedBox(height: 18),
                   Text('Doctors',
                       style: Theme.of(context).textTheme.titleMedium),

@@ -14,7 +14,7 @@ class _ClinicSignupPageState extends State<ClinicSignupPage> {
       'clinic_name',
       'contact_number',
       'email',
-      'area',
+      'business_address',
       'clinician_name',
       'clinician_mobile',
       'clinician_email',

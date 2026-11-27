@@ -84,7 +84,7 @@ class _ClinicApprovalsState extends State<ClinicApprovals> {
                       'Clinic name': clinic['clinic_name'],
                       'Contact number': clinic['contact_number'],
                       'Clinic email': clinic['email'],
-                      'Area': clinic['area'],
+                      'Business address': clinic['business_address'],
                     }.entries)
                       ListTile(
                           title: Text(field.key),
@@ -137,7 +137,7 @@ class _ClinicApprovalsState extends State<ClinicApprovals> {
                   onTap: () => viewClinic(item['id'] as int),
                   title: Text(item['clinic_name'].toString()),
                   subtitle: Text(
-                      '${item['area']} · ${item['email']} · ${item['contact_number']}\n${item['approval_status'] ?? 'approved'}'),
+                      '${item['business_address']} · ${item['email']} · ${item['contact_number']}\n${item['approval_status'] ?? 'approved'}'),
                   isThreeLine: true,
                   trailing: item['signup_source'] == 'self' &&
                           item['approval_status'] == 'pending'

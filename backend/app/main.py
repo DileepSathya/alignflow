@@ -132,6 +132,11 @@ def migrate_clinic_attribution():
             cur.execute("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS reviewed_by BIGINT REFERENCES users(id) ON DELETE SET NULL")
             cur.execute("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ")
             cur.execute("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS rejection_reason TEXT")
+            cur.execute("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS business_address TEXT")
+            cur.execute("SELECT 1 FROM information_schema.columns WHERE table_name = 'clinics' AND column_name = 'area'")
+            if cur.fetchone():
+                cur.execute("UPDATE clinics SET business_address = area WHERE business_address IS NULL")
+                cur.execute("ALTER TABLE clinics DROP COLUMN area")
             cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS clinic_id BIGINT REFERENCES clinics(id) ON DELETE CASCADE")
             cur.execute("ALTER TABLE clinicians ADD COLUMN IF NOT EXISTS clinical_role TEXT NOT NULL DEFAULT 'doctor'")
             cur.execute("ALTER TABLE clinicians ADD COLUMN IF NOT EXISTS added_by BIGINT REFERENCES users(id) ON DELETE SET NULL")
@@ -170,7 +175,7 @@ class ClinicSignup(BaseModel):
     clinic_name: str = Field(min_length=1)
     contact_number: str = Field(min_length=1)
     email: str = Field(min_length=3)
-    area: str = Field(min_length=1)
+    business_address: str = Field(min_length=1)
     clinician_name: str = Field(min_length=1)
     clinician_mobile: str = Field(min_length=1)
     clinician_email: str = Field(min_length=3)
@@ -235,12 +240,12 @@ class ClinicInput(BaseModel):
     clinic_name: str = Field(min_length=1)
     contact_number: str = Field(min_length=1)
     email: str | None = None
-    area: str = Field(min_length=1)
+    business_address: str = Field(min_length=1)
     clinicians: list[ClinicianInput] | None = None
     admin_username: str | None = None
     admin_password: str | None = None
 
-    @field_validator("clinic_name", "contact_number", "area")
+    @field_validator("clinic_name", "contact_number", "business_address")
     @classmethod
     def required_text(cls, value: str) -> str:
         value = value.strip()
@@ -326,7 +331,7 @@ def clinic_signup(body: ClinicSignup, conn=Depends(connection)):
         cur.execute('SELECT 1 FROM users WHERE lower(username)=lower(%s)', (body.username.strip(),))
         if cur.fetchone():
             raise HTTPException(status_code=409, detail='Username already exists')
-        cur.execute("INSERT INTO clinics (clinic_name,contact_number,email,area,signup_source,approval_status) VALUES (%s,%s,%s,%s,'self','pending') RETURNING id", (body.clinic_name.strip(), body.contact_number.strip(), body.email.strip(), body.area.strip()))
+        cur.execute("INSERT INTO clinics (clinic_name,contact_number,email,business_address,signup_source,approval_status) VALUES (%s,%s,%s,%s,'self','pending') RETURNING id", (body.clinic_name.strip(), body.contact_number.strip(), body.email.strip(), body.business_address.strip()))
         clinic_id = cur.fetchone()['id']
         cur.execute("INSERT INTO users (username,password,name,role,clinic_id) VALUES (%s,%s,%s,'clinic_admin',%s) RETURNING id", (body.username.strip(), hash_password(body.password), body.clinician_name.strip(), clinic_id))
         account_id = cur.fetchone()['id']
@@ -344,7 +349,7 @@ def clinic_approvals(admin=Depends(admin_user), conn=Depends(connection)):
 @app.get('/api/admin/clinics/{clinic_id}')
 def admin_clinic_details(clinic_id: int, admin=Depends(admin_user), conn=Depends(connection)):
     with conn.cursor() as cur:
-        cur.execute("SELECT id, clinic_name, contact_number, email, area, signup_source, approval_status FROM clinics WHERE id=%s", (clinic_id,))
+        cur.execute("SELECT id, clinic_name, contact_number, email, business_address, signup_source, approval_status FROM clinics WHERE id=%s", (clinic_id,))
         clinic = cur.fetchone()
         if not clinic:
             raise HTTPException(status_code=404, detail='Clinic not found')
@@ -628,9 +633,9 @@ def create_clinic(body: ClinicInput, user=Depends(clinic_manager), conn=Depends(
         if cur.fetchone():
             raise HTTPException(status_code=409, detail='Username already exists')
         cur.execute(
-            "INSERT INTO clinics (clinic_name, contact_number, email, area, created_by) "
+            "INSERT INTO clinics (clinic_name, contact_number, email, business_address, created_by) "
             "VALUES (%s, %s, %s, %s, %s) RETURNING *",
-            (body.clinic_name, body.contact_number, body.email, body.area, user["id"]),
+            (body.clinic_name, body.contact_number, body.email, body.business_address, user["id"]),
         )
         clinic = cur.fetchone()
         saved_ids = save_clinicians(cur, clinic["id"], body.clinicians, user['id'], first_is_admin=True)
@@ -653,8 +658,8 @@ def update_clinic(clinic_id: int, body: ClinicInput, user=Depends(marketing_user
                 raise HTTPException(status_code=409, detail='Username already exists')
         cur.execute(
             "UPDATE clinics SET clinic_name = %s, contact_number = %s, "
-            "email = %s, area = %s, updated_at = NOW() WHERE id = %s RETURNING *",
-            (body.clinic_name, body.contact_number, body.email, body.area, clinic_id),
+            "email = %s, business_address = %s, updated_at = NOW() WHERE id = %s RETURNING *",
+            (body.clinic_name, body.contact_number, body.email, body.business_address, clinic_id),
         )
         clinic = cur.fetchone()
         if clinic is None:
@@ -1197,7 +1202,7 @@ def create_order(body: OrderInput, user=Depends(current_user), conn=Depends(conn
            "clinician_id": body.clinician_id,
            "clinic_id": body.clinic_id,
            "clinic": {"name": clinic["clinic_name"], "clinicians": clinic_people,
-                      "contact": clinic["contact_number"], "email": clinic["email"], "area": clinic["area"]},
+                      "contact": clinic["contact_number"], "email": clinic["email"], "business_address": clinic["business_address"]},
            "status": "scanner_review", "checklist": new_checklist(), "created_at": timestamp, "updated_at": timestamp,
            "created_by": {"id": user["id"], "name": user["name"], "role": user["role"]},
            "history": [{"status": "scanner_review", "at": timestamp, "by": user["name"],
